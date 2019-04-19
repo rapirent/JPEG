@@ -69,44 +69,42 @@ byte component_mapping_huffman[5];
 
 void read_qt(FILE* fp)
 {
-    int len = read_word_to_bigendian(fp) - 2;
+    byte len = read_word_to_bigendian(fp);
     byte id_prec;
-    while (len >= 0) {
+    printf("section length = %x (hex) %u (dec)\n",len,len);
+    len = len - 2;
+    byte pq,id;
+    byte c;
+    word tmp;
+    while (len > 0) {
         // fscanf(fp,"%"SCNd8,&id_prec);
         fread(&id_prec,1,1,fp);
         len-=1;
         //       - QT 信息 (1 byte):
-        //  bit 0..3: QT 号(0..3, 否则错误)
-        // 低4位：量化表ID，取值範圍為0～3
-        int id = id_prec & 0x0f;
         //  bit 4..7: QT 精度, 0 = 8 bit, 否则 16 bit
-        int precision = id_prec >> 4;
-        //  - n 字节的 QT, n = 64*(精度+1)
-        // is a 8x8 matrix
-        printf("the qt table id is %d, its precision is %d\n",id,precision);
-        byte c;
-        byte t = 0;
+        pq = (id_prec >> 4) ? 1: 0;
+        // 低4位：量化表ID，取值範圍為0～3
+        //tq
+        id = id_prec & 0x0f;
+        printf("the qt id is %u, its precision is (%u + 1) * 8bits\n",id,pq);
         for(int i = 0; i<64; i++) {
-            t=0;
-            for (int p = 0; p < precision; p++) {
-                // fscanf(fp,"%"SCNd8, &c);
-                fread(&c,1,1,fp);
-                t = t << 8;
-                t += c;
+            //  - n 字节的 QT (8x8 martrix), n = 64*(精度+1)
+            if (pq) {
+                tmp = read_word_to_bigendian(fp);
+                len = len - 2;
             }
-            quantize_table_list[id][i] = t;
+            else {
+                fread(&c, 1, 1, fp);
+                len--;
+                tmp = c;
+            }
+            quantize_table_list[id][i] = tmp;
+            printf("%u ",tmp);
+            if((i+1)%8==0) {
+                printf("\n");
+            }
         }
-        // if(precision == 0) {
-        //     for(int i = 0; i < 64; i++) {
-        //         fscanf(fp,"%"SCNd8, &table[i][]);
-        //     }
-        //     len-=64;
-        // } else {
-        //     for(int i = 0; i < 64; i++) {
-        //         table[i] = read_word_to_bigendian(fp);
-        //     }
-        //     len-=64*2;
-        // }
+        // len-=64*(precision+1);
     }
 }
 
@@ -464,7 +462,7 @@ int main(int argc,char* argv[])
             switch(l) {
             case DQT:
                 printf("read DQT\n");
-                // read_qt(fp);
+                read_qt(fp);
                 break;
             case SOF0:
                 printf("read SOF0\n");

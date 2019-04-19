@@ -5,23 +5,31 @@
 
 typedef uint8_t byte;
 
-typedef struct {
-    //big endian
-    byte higher_byte;
-    byte lowwer_byte;
-}word_unit;
+// typedef struct {
+//     //big endian
+//     byte higher_byte;
+//     byte lowwer_byte;
+// }word_unit;
 
 typedef uint16_t word;
 
 uint16_t read_word_to_bigendian(FILE* fp) {
-    word c;
-    fscanf(fp,"%"SCNd16,&c);
+    byte high,low;
+    fread(&high, 1, 1, fp);
+    fread(&low, 1, 1, fp);
+    // printf("get a bigendian word: %.2x%.2x\n", high, low);
+    // 0000 0000 0100 0011
+    //
     // byte high = c.higher_byte;
-    byte high = c >> 8;
+    //exchange the byte: Motorola format
+    word word_value = 0x0000;
+    word_value = ((word_value | high) << 8) &0xff00;
+    word_value = word_value | low;
+    // 0000 0000 0000 0000
     // byte low = c.lowwer_byte;
-    byte low = c & 0x00ff;
-    high = high << 8;
-    return high|low;
+    // word low = (c & 0x00ff << 8);
+    // 0000 0000 0100 0011
+    return word_value;
 }
 
 #define START 0xFF
