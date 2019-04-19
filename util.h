@@ -11,8 +11,10 @@ typedef struct {
     byte lowwer_byte;
 }word_unit;
 
+// typedef uint16_t word;
+
 uint16_t read_word_to_bigendian(FILE* fp) {
-    word_unit c;
+    // word c;
     fscanf(fp,"%"SCNd16,&c);
     byte high = c.higher_byte;
     byte low = c.lowwer_byte;

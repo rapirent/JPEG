@@ -18,8 +18,8 @@ typedef struct{
     int width;
     int vmax;
     int hmax;
-    int components_num;
-    int precision;
+    byte components_num;
+    byte precision;
     frame_component frame_components[5];
 }frame_data;
 
@@ -63,6 +63,9 @@ int huffman_table_index (byte index)
 // 那么单个MCU矩阵的宽就是Hmax*8像素，高就是Vmax*8像素。
 
 int quantize_table_list[4][64];//取值範圍0~3
+frame_data f0;
+huffman_table_list huffman_table[4];
+byte component_mapping_huffman[5];
 
 void read_qt(FILE* fp)
 {
@@ -85,7 +88,7 @@ void read_qt(FILE* fp)
             t=0;
             for (int p = 0; p < precision; p++) {
                 fscanf(fp,"%"SCNd8, &c);
-                t == t << 8;
+                t = t << 8;
                 t += c;
             }
             quantize_table_list[id][i] = t;
@@ -104,12 +107,11 @@ void read_qt(FILE* fp)
     }
 }
 
-frame_data read_frame(FILE *fp)
+void read_frame(FILE *fp)
 {
     //长度 (高字节, 低字节), 8+components*3
     int len = read_word_to_bigendian(fp);
     //   - 数据精度 (1 byte) 每个样本位数, 通常是 8 (大多数软件不支持 12 和 16)
-    frame_data f0;
     fscanf(fp,"%"SCNd8,&f0.precision);
     //   - 图片高度 (高字节, 低字节), 如果不支持 DNL 就必须 >0
     f0.height = read_word_to_bigendian(fp);
@@ -140,10 +142,10 @@ frame_data read_frame(FILE *fp)
         }
         fscanf(fp,"%"SCNd8,&((f0.frame_components[component_id-1]).qantize_table_id));
     }
-    return f0;
+    // return f0;
 }
 
-huffman_table_list* read_ht(FILE* fp)
+void read_ht(FILE* fp)
 {
     //      bit 0..3: HT 號 (0..3, 否則錯誤)
     //      bit 4   : HT 類型, 0 = DC table, 1 = AC table
@@ -155,7 +157,6 @@ huffman_table_list* read_ht(FILE* fp)
     int len = read_word_to_bigendian(fp);
     int ht_node_num;
     byte content;
-    huffman_table_list huffman_table[4];
     byte type_id;
     while (len > 0) {
         fscanf(fp,"%"SCNd8,&type_id);
@@ -179,11 +180,11 @@ huffman_table_list* read_ht(FILE* fp)
                 printf("read HT height info");
                 exit(1);
             }
-            ht_node_num += height_info[i]
+            ht_node_num += height_info[i];
         }
         len-=16;
         //array implement HT, root is HT[1]
-        huffman_table[huffman_table_index(type_id)].(ht_node_num) = ht_node_num;
+        huffman_table[huffman_table_index(type_id)].ht_node_num = ht_node_num;
         huffman_leaf* ht_leaf = (huffman_leaf*)malloc((ht_node_num)*sizeof(huffman_leaf));
         int leaf_index = 0;
         unsigned int codeword = 0;
@@ -205,10 +206,10 @@ huffman_table_list* read_ht(FILE* fp)
         len -= ht_node_num;
         huffman_table[huffman_table_index(type_id)].start = ht_leaf;
     }
-    return huffman_table;
+    // return huffman_table;
 }
 
-byte* read_sos(FILE* fp)
+void read_sos(FILE* fp)
 {
     //     SOS: Start Of Scan:
     //   - 長度 (高字節, 低字節), 必須是 6+2*(掃瞄行內組件的數量)
@@ -236,7 +237,7 @@ byte* read_sos(FILE* fp)
     fscanf(fp,"%"SCNd8,&discard);
     fscanf(fp,"%"SCNd8,&discard);
     fscanf(fp,"%"SCNd8,&discard);
-    return component_mapping_huffman;
+    // return component_mapping_huffman;
 }
 
 bool fscanf_bit(FILE *fp) {
@@ -244,24 +245,25 @@ bool fscanf_bit(FILE *fp) {
     //use count to do 8 times after read a byte
     static byte count = 0;
     byte check_ff00;
+    //每八一次
     if (!count) {
-        fscanf(fp,"%"SCNd8,buffer);
+        fscanf(fp,"%"SCNd8,&buffer);
         //https://www.jianshu.com/p/ccb52e9cd2e4
         //由於JPEG中以0XFF來做為特殊標記符，
         //因此，如果某個像素的取值為0XFF，
         //那麼實際在保存的時候，是以0XFF00來保存的，
         //從而避免其跟特殊標記符0XFF之間產生混淆。
         //在讀取文件信息的時候，如果遇0XFF00，就必須去除後面的00；即，將0XFF00當做0XFF；
-        if (buf == 0xff) {
+        if (buffer == 0xff) {
             unsigned char check_ff00;
-            fscanf(fp,"%"SCNd8,check_ff00);
+            fscanf(fp,"%"SCNd8,&check_ff00);
             if (check_ff00 != 0x00) {
                 printf("missing 0xff00 sequence!");
                 exit(1);
             }
         }
     }
-    bool bit = buf & (1 << (7 - count));
+    bool bit = buffer & (1 << (7 - count));
     count = (count == 7 ? 0 : count + 1);
     return bit;
 }
@@ -274,7 +276,7 @@ int codeword_decode (FILE *fp, byte code_length)
     int decoding_code = 1;
     byte c;
     for (int i = 1; i < code_length; i++) {
-        c = getBit(f);
+        c = fscanf_bit(fp);
         decoding_code = decoding_code << 1;
         decoding_code += leading ? c : !c;
         //正數就是照一般二進位計算，負數就是對正數的碼字取反而已
@@ -282,8 +284,7 @@ int codeword_decode (FILE *fp, byte code_length)
     decoding_code = leading ? decoding_code: -decoding_code;
     return decoding_code;
 }
-
-double* mcu_block(FILE *fp, byte component_id, byte component_mapping_huffman[], huffman_table_list huffman_table[])
+double (*calcualte_mcu_block(FILE *fp, byte component_id))[8]
 {
     //https://github.com/MROS/jpeg_tutorial/blob/d90271bf96da4f0ea772597aa2be74cb83e09296/doc/%E8%B7%9F%E6%88%91%E5%AF%ABjpeg%E8%A7%A3%E7%A2%BC%E5%99%A8%EF%BC%88%E5%9B%9B%EF%BC%89%E8%AE%80%E5%8F%96%E5%A3%93%E7%B8%AE%E5%9C%96%E5%83%8F%E6%95%B8%E6%93%9A.md
     static int dc_block[5] = {0, 0, 0, 0, 0};
@@ -312,17 +313,17 @@ double* mcu_block(FILE *fp, byte component_id, byte component_mapping_huffman[],
         }
     }
     assert(find_it==true);
-    dc[component_id] += !code_length ? 0 : codeword_decode(fp, code_length);
-    block[0][0] = dc[component_id];
+    dc_block[component_id] += !code_length ? 0 : codeword_decode(fp, code_length);
+    block[0][0] = dc_block[component_id];
     //     讀取交流變量
     // 再接着取出 bit 直到對上交流霍夫曼表的一個碼字，取出對應信源編碼。
     // 這個信源編碼代表的意義爲
     // AC在低位，只需要在高位加入0x1
-    huffman_leaf* ac_table = huffman_table[huffman_table_index(component_mapping_huffman[component_id] & 0x0f | 0x10].start;
+    huffman_leaf* ac_table = huffman_table[huffman_table_index((component_mapping_huffman[component_id] & 0x0f) | 0x10)].start;
     for(int i=0;i<63;) {
         codeword = 0;
         find_it = false;
-        for (int j = 0; j< huffman_table[huffman_table_index(component_mapping_huffman[component_id] & 0x0f | 0x10].ht_node_num; j++) {
+        for (int j = 0; j< huffman_table[huffman_table_index((component_mapping_huffman[component_id] & 0x0f) | 0x10)].ht_node_num; j++) {
             codeword = codeword << 1;
             codeword+=fscanf_bit(fp);
             if(dc_table[j].codeword == codeword) {
@@ -354,11 +355,11 @@ double* mcu_block(FILE *fp, byte component_id, byte component_mapping_huffman[],
                 }
                 break;
             default:
-                for (k=0;k<(code_length >> 4);k++) {
+                for (int k=0;k<(code_length >> 4);k++) {
                     block[i/8][i%8] = 0.0;
                     i++;
                 }
-                block[i/8][i%8] = codeword_decode(fp, code_length & 0x0f)
+                block[i/8][i%8] = codeword_decode(fp, code_length & 0x0f);
                 i++;
                 break;
         }
@@ -366,19 +367,24 @@ double* mcu_block(FILE *fp, byte component_id, byte component_mapping_huffman[],
     return block;
 }
 
-double** mcu_component(FILE *fp, frame_data f0, byte component_id, byte component_mapping_huffman[], huffman_table_list huffman_table[])
+double**** mcu_component(FILE *fp, byte id)
 {
     //一個顏色分量內部各個 block 的順序:由左到右，再由上到下
-    double* mcu_block[f0.frame_components[id].horizontal_sample][f0.frame_components[id].vertical_sample];
+    double** mcu_block[f0.frame_components[id].horizontal_sample][f0.frame_components[id].vertical_sample];
     for (int i =1; i<f0.frame_components[id].horizontal_sample; i ++) {
         for (int j = 1;j<f0.frame_components[id].vertical_sample;j++) {
-            mcu_block[i][j] = mcu_block(fp, component_id, component_mapping_huffman, huffman_table);
+            mcu_block[i][j] = calcualte_mcu_block(fp, id);
         }
     }
     return mcu_block;
 }
+//TODO
+void dequantize(){}
+void dezigzag(){}
+void inversedct(){}
+void upsample(){}
 
-double*** calculate_mcu(FILE* fp,frame_data f0, byte component_mapping_huffman[], huffman_table_list huffman_table[])
+void calculate_mcu(FILE* fp)
 {
     //MCU 的寬 = 8 * 最高水平採樣率
     int mcu_width = 8 * f0.hmax;
@@ -392,53 +398,55 @@ double*** calculate_mcu(FILE* fp,frame_data f0, byte component_mapping_huffman[]
     for (int i  = 0;i<mcu_number_col;i++) {
         for (int j = 0;j<mcu_number_row;j++) {
             for (int id = 0 ;id<3;id++) {
-                mcu[i][j][id] = mcu_component(fp,f0,id,component_mapping_huffman,huffman_table);
+                mcu[i][j][id] = mcu_component(fp,id);
             }
+            //decode
+            dequantize();
+            dezigzag();
+            inversedct();
+            upsample();
         }
     }
-    return mcu;
+    // return mcu;
 }
 
 int main(int argc,char* argv[]) {
-    if (argc != 3) {
+    if (argc != 2) {
         printf("[ERROR]:\nusage: ");
         exit(1);
     }
     FILE* fp;
-    if (fp = fopen(argv[1], "r") == NULL) {
+    if ((fp = fopen(argv[1], "r")) == NULL) {
         printf("%s can't be opened\n", argv[1]);
         exit(1);
     }
     word_unit c;
+    // word c;
     bool b_SOI = false;
     bool b_EOI = false;
-    frame_data f0;
-    int* qantize_table_list[4];
-    huffman_table_list huffman_table[4];
-    byte component_mapping_huffman[5];
     double*** mcu;
     while (2 == fscanf(fp,"%"SCNd16,&c)) {
-        if (c.higher_byte == 0xFF) {
+        if (c & 0xFF00 == 0xFF00) {
             if (!b_SOI && c.lowwer_byte == SOI) {
                 b_SOI = true;
             }
             assert(b_SOI == true);
-            if (c.lowwer_byte >= APP0 && c.loower_byte <= APP15) {
+            if (c.lowwer_byte >= APP0 && c.lowwer_byte <= APP15) {
                 continue;
             }
             switch(c.lowwer_byte) {
                 case DQT:
-                    qantize_table_list = read_qt(fp);
+                    read_qt(fp);
                     break;
                 case SOF0:
-                    f0 = read_frame(fp);
+                    read_frame(fp);
                     break;
                 case DHT:
-                    huffman_table = read_ht(fp);
+                    read_ht(fp);
                     break;
                 case SOS:
-                    component_mapping_huffman = read_sos(fp);
-                    mcu = calculate_mcu(fp,component_mapping_huffman,huffman_table,f0);
+                    read_sos(fp);
+                    calculate_mcu(fp);
                     break;
                 case EOI:
                     b_EOI = true;
