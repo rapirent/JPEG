@@ -7,11 +7,6 @@
 #include <math.h>
 #include "util.h"
 
-typedef struct qantize_table_list{
-    int* table_start;
-    struct qantize_table_list* next;
-}qantize_table_list;
-
 typedef struct{
     byte horizontal_sample;
     byte vertical_sample;
@@ -67,41 +62,46 @@ int huffman_table_index (byte index)
 // 记三个分量中水平采样因子最大值为Hmax，垂直采样因子最大值为Vmax，
 // 那么单个MCU矩阵的宽就是Hmax*8像素，高就是Vmax*8像素。
 
-struct qantize_table_list* read_QT(FILE* fp)
+int quantize_table_list[4][64];//取值範圍0~3
+
+void read_qt(FILE* fp)
 {
     int len = read_word_to_bigendian(fp) - 2;
     byte id_prec;
-    struct qantize_table_list* tables = NULL;
     while (len >= 0) {
-        fcanf(fp,"%"SCNd8,&id_prec);
+        fscanf(fp,"%"SCNd8,&id_prec);
         len-=1;
         //       - QT 信息 (1 byte):
         //  bit 0..3: QT 号(0..3, 否则错误)
+        // 低4位：量化表ID，取值範圍為0～3
+        int id = id_prec & 0x0f;
         //  bit 4..7: QT 精度, 0 = 8 bit, 否则 16 bit
-        int id = id_prec & 0x0F;
         int precision = id_prec >> 4;
         //  - n 字节的 QT, n = 64*(精度+1)
         // is a 8x8 matrix
-        int *table;
-        table = (int*)malloc(64 * sizeof(int));
-        if(precision == 0) {
-            for(int i = 0; i < 64; i++) {
-                fcanf(fp,"%"SCNd8, &table[i]);
+        byte c;
+        byte t = 0;
+        for(int i = 0;i<64;i++) {
+            t=0;
+            for (int p = 0; p < precision; p++) {
+                fscanf(fp,"%"SCNd8, &c);
+                t == t << 8;
+                t += c;
             }
-            len-=64;
-        } else {
-            for(int i = 0; i < 64; i++) {
-                table[i] = read_word_to_bigendian(fp);
-            }
-            len-=64*2;
+            quantize_table_list[id][i] = t;
         }
-        struct qantize_table_list *new_table = malloc(sizeof(struct qantize_table_list));
-        new_table->table_start = table;
-        new_table->next = NULL;
-        tables->next = new_table;
-        tables = new_table;
+        // if(precision == 0) {
+        //     for(int i = 0; i < 64; i++) {
+        //         fscanf(fp,"%"SCNd8, &table[i][]);
+        //     }
+        //     len-=64;
+        // } else {
+        //     for(int i = 0; i < 64; i++) {
+        //         table[i] = read_word_to_bigendian(fp);
+        //     }
+        //     len-=64*2;
+        // }
     }
-    return tables;
 }
 
 frame_data read_frame(FILE *fp)
@@ -143,7 +143,7 @@ frame_data read_frame(FILE *fp)
     return f0;
 }
 
-huffman_table_list* read_HT(FILE* fp)
+huffman_table_list* read_ht(FILE* fp)
 {
     //      bit 0..3: HT 號 (0..3, 否則錯誤)
     //      bit 4   : HT 類型, 0 = DC table, 1 = AC table
@@ -155,7 +155,7 @@ huffman_table_list* read_HT(FILE* fp)
     int len = read_word_to_bigendian(fp);
     int ht_node_num;
     byte content;
-    huffman_table_list huffman_table_list[4];
+    huffman_table_list huffman_table[4];
     byte type_id;
     while (len > 0) {
         fscanf(fp,"%"SCNd8,&type_id);
@@ -166,6 +166,7 @@ huffman_table_list* read_HT(FILE* fp)
         //      bit 4   : HT 類型, 0 = DC table, 1 = AC table
         //      bit 5..7: 必須是 0
         // 這個字節的值為一般只有四個0x00、0x01、0x10、0x11。
+        // 0000 0000 | 0000 0001 | 0001 0000 | 0001 0001
         // 0x00表示DC直流0號表；
         // 0x01表示DC直流1號表；
         // 0x10表示AC交流0號表；
@@ -182,7 +183,7 @@ huffman_table_list* read_HT(FILE* fp)
         }
         len-=16;
         //array implement HT, root is HT[1]
-        huffman_table_list[huffman_table_index(type_id)].(ht_node_num) = ht_node_num;
+        huffman_table[huffman_table_index(type_id)].(ht_node_num) = ht_node_num;
         huffman_leaf* ht_leaf = (huffman_leaf*)malloc((ht_node_num)*sizeof(huffman_leaf));
         int leaf_index = 0;
         unsigned int codeword = 0;
@@ -202,9 +203,9 @@ huffman_table_list* read_HT(FILE* fp)
             codeword=codeword<<1;
         }
         len -= ht_node_num;
-        huffman_table_list[huffman_table_index(type_id)].start = ht_leaf;
+        huffman_table[huffman_table_index(type_id)].start = ht_leaf;
     }
-    return huffman_table_list;
+    return huffman_table;
 }
 
 byte* read_sos(FILE* fp)
@@ -266,7 +267,7 @@ bool fscanf_bit(FILE *fp) {
 }
 
 
-int codeword_decode (FILE *fp)
+int codeword_decode (FILE *fp, byte code_length)
 {
     byte leading;
     leading = fscanf_bit(fp);
@@ -282,18 +283,9 @@ int codeword_decode (FILE *fp)
     return decoding_code;
 }
 
-void mcu_block()
+double* mcu_block(FILE *fp, byte component_id, byte component_mapping_huffman[], huffman_table_list huffman_table[])
 {
-    //一個顏色分量內部各個 block 的順序:由左到右，再由上到下
-    for (int i_c =1; i_c<f0.frame_components[id].horizontal_sample; i_c ++) {
-        for (int j_c = 1;j_c<f0.frame_components[id].vertical_sample;j_c++) {
-
-        }
-    }
-}
-
-void mcu_component(FILE *fp, byte component_id, byte component_mapping_huffman[])
-{
+    //https://github.com/MROS/jpeg_tutorial/blob/d90271bf96da4f0ea772597aa2be74cb83e09296/doc/%E8%B7%9F%E6%88%91%E5%AF%ABjpeg%E8%A7%A3%E7%A2%BC%E5%99%A8%EF%BC%88%E5%9B%9B%EF%BC%89%E8%AE%80%E5%8F%96%E5%A3%93%E7%B8%AE%E5%9C%96%E5%83%8F%E6%95%B8%E6%93%9A.md
     static int dc_block[5] = {0, 0, 0, 0, 0};
     // 直流變量：
     // 不斷從數據流中讀取一個 bit，直到可以對上直流霍夫曼表中的一個碼字，
@@ -301,15 +293,16 @@ void mcu_component(FILE *fp, byte component_id, byte component_mapping_huffman[]
     // 假如是 n 就繼續讀取 n bits ，以下表解碼後，就是直流變量。
     // 	- bit 0..3: AC table (0..3)
     // 	- bit 4..7: DC table (0..3)
-
-    //      bit 0..3: HT 號 (0..3, 否則錯誤)
-    //      bit 4   : HT 類型, 0 = DC table, 1 = AC table
-    //      bit 5..7: 必須是 0
-    huffman_leaf* dc_table = huffman_table_list[huffman_table_index(component_mapping_huffman[component_id] << 4)].start;
+    // 前一個代表直流(0)或交流(1)
+    // 0000 0000 | 0000 0001 | 0001 0000 | 0001 0001
+    double block[8][8];
+    memset(block,0,sizeof(block));
+    //DC在高位，必須轉為0x00或0x01
+    huffman_leaf* dc_table = huffman_table[huffman_table_index(component_mapping_huffman[component_id] >> 4)].start;
     byte code_length;
     unsigned int codeword = 0;
     bool find_it = false;
-    for (int i = 0; i< huffman_table_list[huffman_table_index(component_mapping_huffman[component_id] << 4)].ht_node_num; i++) {
+    for (int i = 0; i< huffman_table[huffman_table_index(component_mapping_huffman[component_id] >> 4)].ht_node_num; i++) {
         codeword = codeword << 1;
         codeword+=fscanf_bit(fp);
         if(dc_table[i].codeword == codeword) {
@@ -319,25 +312,73 @@ void mcu_component(FILE *fp, byte component_id, byte component_mapping_huffman[]
         }
     }
     assert(find_it==true);
-//     讀取交流變量
-// 再接着取出 bit 直到對上交流霍夫曼表的一個碼字，取出對應信源編碼。
-// 這個信源編碼代表的意義爲
-// 高 4 bits 代表接下來的數值連續有幾個 0
-// 低 4 bits 代表這些 0 之後跟著的數值的位數，假如是 n 就繼續讀取 n bits ，以下表解碼後，就是這些 0 之後跟着的數值。
-// 有兩個特殊的信源編碼，含義與上述不同
-// 0x00 代表接下來所有的交流變量全爲 0
-// 0xF0 代表接下來有 16 個 0
-// 當以下兩種狀況發生時，代表交流變量已經讀取完畢
-// 63 個交流編碼都已經讀完
-// 讀到 0x00 ，直到剩下的交流變量全爲 0
-    for (int i = 0;i<8;i++) {
-        for(int j =0;j<8;j++) {
-            dc[component_id] += !code_length ? 0 : codeword_decode(fp);
+    dc[component_id] += !code_length ? 0 : codeword_decode(fp, code_length);
+    block[0][0] = dc[component_id];
+    //     讀取交流變量
+    // 再接着取出 bit 直到對上交流霍夫曼表的一個碼字，取出對應信源編碼。
+    // 這個信源編碼代表的意義爲
+    // AC在低位，只需要在高位加入0x1
+    huffman_leaf* ac_table = huffman_table[huffman_table_index(component_mapping_huffman[component_id] & 0x0f | 0x10].start;
+    for(int i=0;i<63;) {
+        codeword = 0;
+        find_it = false;
+        for (int j = 0; j< huffman_table[huffman_table_index(component_mapping_huffman[component_id] & 0x0f | 0x10].ht_node_num; j++) {
+            codeword = codeword << 1;
+            codeword+=fscanf_bit(fp);
+            if(dc_table[j].codeword == codeword) {
+                //找到對應碼字
+                code_length = dc_table[j].content;
+                find_it = true;
+            }
+        }
+        assert(find_it==true);
+        // 高 4 bits 代表接下來的數值連續有幾個 0
+        // 低 4 bits 代表這些 0 之後跟著的數值的位數，假如是 n 就繼續讀取 n bits ，以下表解碼後，就是這些 0 之後跟着的數值。
+        // 有兩個特殊的信源編碼，含義與上述不同
+        // 0x00 代表接下來所有的交流變量全爲 0
+        // 0xF0 代表接下來有 16 個 0
+        // 當以下兩種狀況發生時，代表交流變量已經讀取完畢
+        // 1.63 個交流編碼都已經讀完
+        // 2.讀到 0x00 ，直到剩下的交流變量全爲 0
+        switch(code_length) {
+            case 0x00:
+                for (int k = 0;k<16;k++) {
+                    block[i/8][i%8] = 0.0;
+                    i++;
+                }
+                break;
+            case 0xf0:
+                while(i<63) {
+                    block[i/8][i%8] = 0.0;
+                    i++;
+                }
+                break;
+            default:
+                for (k=0;k<(code_length >> 4);k++) {
+                    block[i/8][i%8] = 0.0;
+                    i++;
+                }
+                block[i/8][i%8] = codeword_decode(fp, code_length & 0x0f)
+                i++;
+                break;
         }
     }
+    return block;
 }
 
-void mcu(frame_data f0, byte component_mapping_huffman[])
+double** mcu_component(FILE *fp, frame_data f0, byte component_id, byte component_mapping_huffman[], huffman_table_list huffman_table[])
+{
+    //一個顏色分量內部各個 block 的順序:由左到右，再由上到下
+    double* mcu_block[f0.frame_components[id].horizontal_sample][f0.frame_components[id].vertical_sample];
+    for (int i =1; i<f0.frame_components[id].horizontal_sample; i ++) {
+        for (int j = 1;j<f0.frame_components[id].vertical_sample;j++) {
+            mcu_block[i][j] = mcu_block(fp, component_id, component_mapping_huffman, huffman_table);
+        }
+    }
+    return mcu_block;
+}
+
+double*** calculate_mcu(FILE* fp,frame_data f0, byte component_mapping_huffman[], huffman_table_list huffman_table[])
 {
     //MCU 的寬 = 8 * 最高水平採樣率
     int mcu_width = 8 * f0.hmax;
@@ -347,15 +388,15 @@ void mcu(frame_data f0, byte component_mapping_huffman[])
     int mcu_number_col = ((f0.height + mcu_height - 1) / mcu_height);
     int mcu_number_row = ((f0.width + mcu_width - 1) / mcu_width);
     //MCU 的順序:由左到右，再由上到下
+    double** mcu[mcu_number_col][mcu_number_row][3];
     for (int i  = 0;i<mcu_number_col;i++) {
         for (int j = 0;j<mcu_number_row;j++) {
-            double sample_blocks[f0.frame_components[id].horizontal_sample][f0.frame_components[id].vertical_sample];
             for (int id = 0 ;id<3;id++) {
-                mcu_component(fp,id,component_mapping_huffman);
+                mcu[i][j][id] = mcu_component(fp,f0,id,component_mapping_huffman,huffman_table);
             }
         }
     }
-
+    return mcu;
 }
 
 int main(int argc,char* argv[]) {
@@ -370,8 +411,14 @@ int main(int argc,char* argv[]) {
     }
     word_unit c;
     bool b_SOI = false;
-    while (2 == fscanf(fp,"%"SCNd16,&c) {
-    if (c.higher_byte == 0xFF) {
+    bool b_EOI = false;
+    frame_data f0;
+    int* qantize_table_list[4];
+    huffman_table_list huffman_table[4];
+    byte component_mapping_huffman[5];
+    double*** mcu;
+    while (2 == fscanf(fp,"%"SCNd16,&c)) {
+        if (c.higher_byte == 0xFF) {
             if (!b_SOI && c.lowwer_byte == SOI) {
                 b_SOI = true;
             }
@@ -381,21 +428,28 @@ int main(int argc,char* argv[]) {
             }
             switch(c.lowwer_byte) {
                 case DQT:
-
-                    break
+                    qantize_table_list = read_qt(fp);
+                    break;
                 case SOF0:
-                    break
+                    f0 = read_frame(fp);
+                    break;
                 case DHT:
-                    break
+                    huffman_table = read_ht(fp);
+                    break;
                 case SOS:
-                    break
-                case EOF:
-                    break
+                    component_mapping_huffman = read_sos(fp);
+                    mcu = calculate_mcu(fp,component_mapping_huffman,huffman_table,f0);
+                    break;
+                case EOI:
+                    b_EOI = true;
+                    break;
                 default:
-                    printf("unkwon marker");
+                    printf("unkwon marker: %x\n", c);
                     break;
             }
         }
     }
+    assert(b_EOI==true);
+    //decoding!
     return 0;
 }
