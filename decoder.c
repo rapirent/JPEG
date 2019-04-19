@@ -14,10 +14,10 @@ typedef struct {
 } frame_component;
 
 typedef struct {
-    int height;
-    int width;
-    int vmax;
-    int hmax;
+    word height;
+    word width;
+    byte vmax;
+    byte hmax;
     byte components_num;
     byte precision;
     frame_component frame_components[5];
@@ -112,75 +112,80 @@ void read_frame(FILE *fp)
 {
     //长度 (高字节, 低字节), 8+components*3
     int len = read_word_to_bigendian(fp);
+    printf("section length = %x (hex) %u (dec)\n",len,len);
+
     //   - 数据精度 (1 byte) 每个样本位数, 通常是 8 (大多数软件不支持 12 和 16)
     // fscanf(fp,"%"SCNd8,&f0.precision);
     fread(&(f0.precision),1,1,fp);
+    printf("precision is %d(dec) \n",f0.precision);
+    // Number of lines – Specifies the maximum number of lines in the source image.
     //   - 图片高度 (高字节, 低字节), 如果不支持 DNL 就必须 >0
     f0.height = read_word_to_bigendian(fp);
+    // Number of samples per line
     //   - 图片宽度 (高字节, 低字节), 如果不支持 DNL 就必须 >0
     f0.width = read_word_to_bigendian(fp);
+    printf("image height %d(dec), image widht %d(dec)\n",f0.height,f0.width);
     //   - components 数量(1 byte), 灰度图是 1, YCbCr/YIQ 彩色图是 3, CMYK 彩色图是 4
     // fscanf(fp,"%"SCNd8,&f0.components_num);
     fread(&(f0.components_num),1,1,fp);
+    printf("# of image components is %d (dec)\n",f0.components_num);
+
     byte component_id;
-    byte sample_cof;
-    f0.vmax = -1;
-    f0.hmax = -1;
+    byte sample;
+    f0.vmax = 0x00;
+    f0.hmax = 0x00;
     for (int i = 0; i < f0.components_num; i++) {
         //   - 每个 component: 3 bytes
         //      - component id (1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q)
         // fscanf(fp,"%"SCNd8,&component_id);
         fread(&component_id,1,1,fp);
+        printf("------------\nnow is reading component whose id=%d(dec)\n",component_id);
+        //      - 采样系数 (bit 0-3 vert., 4-7 hor.)
+        // fscanf(fp,"%"SCNd8,&sample);
+        fread(&sample,1,1,fp);
+        // 先Horizontal sampling factor 再Vertical sampling factor
+        (f0.frame_components[component_id-1]).horizontal_sample = (sample >> 4) & 0x0f;
+        (f0.frame_components[component_id-1]).vertical_sample = sample & 0x0f;
+        printf("horizontal sample factor=%d,\n",(f0.frame_components[component_id-1]).horizontal_sample);
+        printf("horizontal sample factor=%d\n",(f0.frame_components[component_id-1]).vertical_sample);
         //MCU 的寬 = 8 * 最高水平採樣率
         // MCU 的高 = 8 * 最高垂直採樣率
-
-        //      - 采样系数 (bit 0-3 vert., 4-7 hor.)
-        // fscanf(fp,"%"SCNd8,&sample_cof);
-        fread(&sample_cof,1,1,fp);
-        (f0.frame_components[component_id-1]).horizontal_sample = sample_cof >> 4;
-        (f0.frame_components[component_id-1]).vertical_sample = sample_cof & 0x0f;
         if( (f0.frame_components[component_id-1]).horizontal_sample > f0.hmax) {
             f0.hmax = (f0.frame_components[component_id-1]).horizontal_sample;
         }
         if( (f0.frame_components[component_id-1]).vertical_sample > f0.vmax) {
             f0.vmax = (f0.frame_components[component_id-1]).vertical_sample;
         }
+        //Quantization table destination selector
         // fscanf(fp,"%"SCNd8,&((f0.frame_components[component_id-1]).qantize_table_id));
         fread(&((f0.frame_components[component_id-1]).qantize_table_id),1,1,fp);
+        printf("qt destination = %d\n",(f0.frame_components[component_id-1]).qantize_table_id);
     }
     // return f0;
 }
 
 void read_ht(FILE* fp)
 {
-    //      bit 0..3: HT 號 (0..3, 否則錯誤)
-    //      bit 4   : HT 類型, 0 = DC table, 1 = AC table
-    //      bit 5..7: 必須是 0
-    //   - 16 bytes: 長度是 1..16 代碼的符號數. 這 16 個數的和應該 <=256
-    //   - n bytes: 一個包含了按遞增次序代碼長度排列的符號表
-    //     (n = 代碼總數)
     byte height_info[16];
     int len = read_word_to_bigendian(fp);
+    printf("section length = %x (hex) %u (dec)\n",len,len);
+    len = len - 2;
     int ht_node_num;
     byte content;
-    byte type_id;
+    byte class_id;
     while (len > 0) {
-        // fscanf(fp,"%"SCNd8,&type_id);
-        fread(&type_id,1,1,fp);
-        // (type_id >> 4) & 0x0f
-        // type_id & 0x0f
-        // 0x0F bit-pattern 0000 1111
+        // fscanf(fp,"%"SCNd8,&class_id);
+        fread(&class_id,1,1,fp);
+        len--;
         //      bit 0..3: HT 號 (0..3, 否則錯誤)
         //      bit 4   : HT 類型, 0 = DC table, 1 = AC table
         //      bit 5..7: 必須是 0
-        // 這個字節的值為一般只有四個0x00、0x01、0x10、0x11。
-        // 0000 0000 | 0000 0001 | 0001 0000 | 0001 0001
         // 0x00表示DC直流0號表；
         // 0x01表示DC直流1號表；
         // 0x10表示AC交流0號表；
         // 0x11表示AC交流1號表。
-        len-=1;
-        memset(height_info, 0, sizeof(height_info));
+        printf("Huffman Table class & qt destination %.2u\n",class_id);
+        memset(height_info, 0, sizeof(height_info));//huffman tree height = codeword length
         ht_node_num = 0;
         for(int i = 0; i<16; i++) {
             // if(fscanf(fp,"%"SCNd8,&height_info[i])!=1) {
@@ -188,11 +193,11 @@ void read_ht(FILE* fp)
             //     exit(1);
             // }
             fread(&height_info[i],1,1,fp);
+            len--;
             ht_node_num += height_info[i];
         }
-        len-=16;
         //array implement HT, root is HT[1]
-        huffman_table[huffman_table_index(type_id)].ht_node_num = ht_node_num;
+        huffman_table[huffman_table_index(class_id)].ht_node_num = ht_node_num;
         huffman_leaf* ht_leaf = (huffman_leaf*)malloc((ht_node_num)*sizeof(
                                     huffman_leaf));
         int leaf_index = 0;
@@ -215,7 +220,7 @@ void read_ht(FILE* fp)
             codeword=codeword<<1;
         }
         len -= ht_node_num;
-        huffman_table[huffman_table_index(type_id)].start = ht_leaf;
+        huffman_table[huffman_table_index(class_id)].start = ht_leaf;
     }
     // return huffman_table;
 }
@@ -461,19 +466,19 @@ int main(int argc,char* argv[])
             // }
             switch(l) {
             case DQT:
-                printf("read DQT\n");
+                printf("\nread DQT\n");
                 read_qt(fp);
                 break;
             case SOF0:
-                printf("read SOF0\n");
-                // read_frame(fp);
+                printf("\nread SOF0\n");
+                read_frame(fp);
                 break;
             case DHT:
-                printf("read DHT\n");
-                // read_ht(fp);
+                printf("\nread DHT\n");
+                read_ht(fp);
                 break;
             case SOS:
-                printf("read SOS\n");
+                printf("\nread SOS\n");
                 // read_sos(fp);
                 // calculate_mcu(fp);
                 break;
@@ -493,7 +498,7 @@ int main(int argc,char* argv[])
             case APP13:
             case APP14:
             case APP15:
-                printf("APP section: discard\n");
+                printf("\nread APP: discard\n");
                 break;
             case EOI:
                 printf("End of Image\n");
