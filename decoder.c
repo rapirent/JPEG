@@ -244,35 +244,32 @@ void read_sos(FILE* fp)
     //     SOS: Start Of Scan:
     //   - 長度 (高字節, 低字節), 必須是 6+2*(掃瞄行內組件的數量)
     int len = read_word_to_bigendian(fp);
+    printf("section length = %x (hex) %u (dec)\n",len,len);
     //   - 掃瞄行內組件的數量 (1 byte), 必須 >= 1 , <=4 (否則是錯的) 通常是 3
     byte component_num;
     // fscanf(fp,"%"SCNd8,&component_num);
     fread(&component_num,1,1,fp);
+    printf(" Number of img components = %d (dec)\n",component_num);
     assert(len == 6+2*component_num);
+    len = len - 3;
     assert(component_num==3);//JFIF defined
     //   - 每個組件: 2 bytes
     //      - component id (1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q), 見 SOF0
-    byte component_mapping_huffman[5];
-    byte component_id,discard;
-    // for(int i =0;i<component_num;i++) {
-    for (int i =0; i<3; i++) {
+    byte component_id,destination;
+    for (int i =0; i<component_num; i++) {
 
         // fscanf(fp,"%"SCNd8,&component_id);
         fread(&component_id,1,1,fp);
-        //      - 使用的 Huffman 表:
-        //  - bit 0..3: AC table (0..3)
-        //  - bit 4..7: DC table (0..3)
         // fscanf(fp,"%"SCNd8,&component_mapping_huffman[component_id]);
-        fread(&component_mapping_huffman[component_id],1,1,fp);
+        fread(&destination,1,1,fp);
+        len = len-2;
+        printf("# %d component select %.2x destination\n",component_id,destination);
+        component_mapping_huffman[component_id-0x01] = destination;
     }
     //   - 忽略 3 bytes (???)
-    // fscanf(fp,"%"SCNd8,&discard);
-    // fscanf(fp,"%"SCNd8,&discard);
-    // fscanf(fp,"%"SCNd8,&discard);
-    fread(&discard,1,1,fp);
-    fread(&discard,1,1,fp);
-    fread(&discard,1,1,fp);
-    // return component_mapping_huffman;
+    fread(&destination,1,1,fp);
+    fread(&destination,1,1,fp);
+    fread(&destination,1,1,fp);
 }
 
 bool fscanf_bit(FILE *fp)
@@ -493,7 +490,7 @@ int main(int argc,char* argv[])
                 break;
             case SOS:
                 printf("\nread SOS\n");
-                // read_sos(fp);
+                read_sos(fp);
                 // calculate_mcu(fp);
                 break;
             case APP0:
