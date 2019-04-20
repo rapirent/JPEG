@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <math.h>
+#include <string.h>
 #include "util.h"
 
 typedef struct {
@@ -24,7 +25,7 @@ typedef struct {
 } frame_data;
 
 typedef struct huffman_leaf {
-    int codeword;
+    word codeword;
     int codeword_len;
     byte value;
 } huffman_leaf;
@@ -55,6 +56,14 @@ int huffman_table_index (byte index)
     }
 }
 
+double cos_cache[200];
+
+void init_cos_cache() {
+    for (int i = 0; i < 200; i++) {
+        cos_cache[i] = cos(i * M_PI / 16.0);
+    }
+}
+
 // 查阅标记SOF0，可以得到图像不同颜色分量的采样因子，
 // 即Y、Cr、Cb三个分量各自的水平采样因子和垂直采样因子。
 // 大多图片的采样因子为4：1：1或1：1：1。
@@ -64,7 +73,7 @@ int huffman_table_index (byte index)
 
 int quantize_table_list[4][64];//取值範圍0~3
 frame_data f0;
-huffman_table_list huffman_table[4];
+huffman_table_list huffman_tables[4];
 byte component_mapping_huffman[5];
 
 void read_qt(FILE* fp)
@@ -200,7 +209,7 @@ void read_ht(FILE* fp)
             ht_node_num += huffman_length[i];
         }
 
-        huffman_table[huffman_table_index(class_id)].ht_node_num = ht_node_num;
+        huffman_tables[huffman_table_index(class_id)].ht_node_num = ht_node_num;
         huffman_leaf* ht_leaf = (huffman_leaf*)malloc((ht_node_num)*sizeof(
                                     huffman_leaf));
         word codeword = 0;
@@ -229,13 +238,13 @@ void read_ht(FILE* fp)
                                                 // height - ht_leaf[leaf_index-1].codeword_len)) * (codeword);
                 ht_leaf[leaf_index].codeword = (codeword++);
                 ht_leaf[leaf_index].codeword_len = height+1;
-                printf("leaf #%d | codword %x | source value %.2x\n",leaf_index, ht_leaf[leaf_index].codeword, ht_value);
+                printf("leaf #%d | codword %.2x | source value %.2x | length=%d \n",leaf_index, ht_leaf[leaf_index].codeword, ht_value,ht_leaf[leaf_index].codeword_len);
                 leaf_index++;
             }
             //不斷往左移一位
             codeword = codeword<<1;
         }
-        huffman_table[huffman_table_index(class_id)].start = ht_leaf;
+        huffman_tables[huffman_table_index(class_id)].start = ht_leaf;
     }
 }
 
@@ -268,20 +277,23 @@ void read_sos(FILE* fp)
     }
     //   - 忽略 3 bytes (???)
     fread(&destination,1,1,fp);
+    printf("discrad byte = %.2x\n",destination);
     fread(&destination,1,1,fp);
+    printf("discrad byte = %.2x\n",destination);
     fread(&destination,1,1,fp);
+    printf("discrad byte = %.2x\n",destination);
 }
-
-bool fscanf_bit(FILE *fp)
+//only read one bit
+byte read_one_bit(FILE *fp)
 {
     static byte buffer;
-    //use count to do 8 times after read a byte
     static byte count = 0;
     byte check_ff00;
     //每八一次
     if (!count) {
         // fscanf(fp,"%"SCNd8,&buffer);
         fread(&buffer,1,1,fp);
+        printf("-------\nread this buffer=%.2x\n",buffer);
         //https://www.jianshu.com/p/ccb52e9cd2e4
         //由於JPEG中以0XFF來做為特殊標記符，
         //因此，如果某個像素的取值為0XFF，
@@ -298,20 +310,21 @@ bool fscanf_bit(FILE *fp)
             }
         }
     }
-    bool bit = buffer & (1 << (7 - count));
+    byte bit = (buffer >> count)&0x01;
     count = (count == 7 ? 0 : count + 1);
+    //每八一次
+    printf("------\nread bit %x\n",bit);
     return bit;
 }
 
 
-int codeword_decode (FILE *fp, byte code_length)
+int codeword_decode (FILE *fp, byte need_read_length)
 {
-    byte leading;
-    leading = fscanf_bit(fp);
+    byte leading = read_one_bit(fp);
     int decoding_code = 1;
     byte c;
-    for (int i = 1; i < code_length; i++) {
-        c = fscanf_bit(fp);
+    for (int i = 1; i < need_read_length; i++) {
+        c = read_one_bit(fp);
         decoding_code = decoding_code << 1;
         decoding_code += leading ? c : !c;
         //正數就是照一般二進位計算，負數就是對正數的碼字取反而已
@@ -319,11 +332,41 @@ int codeword_decode (FILE *fp, byte code_length)
     decoding_code = leading ? decoding_code: -decoding_code;
     return decoding_code;
 }
+
+byte decode_huffman(FILE *fp, byte huffman_table_id) {
+    huffman_leaf* huffman_table = huffman_tables[huffman_table_id].start;
+    int ht_node_num = huffman_tables[huffman_table_id].ht_node_num;
+    word codeword = 0x0000;
+    for(int i = 0;i<16;i++) {
+        codeword =codeword<<1;
+        codeword |= (word)read_one_bit(fp);
+        printf("now codeword is %.2x(hex) |"BYTE_TO_BINARY_PATTERN,codeword,BYTE_TO_BINARY(codeword >> 8));
+        printf(BYTE_TO_BINARY_PATTERN"(binary) with length = %d \n",BYTE_TO_BINARY(codeword),i+1);
+        for(int j = 0;j<ht_node_num;j++) {
+            // printf("the huffman=%.2x(hex) len=%d \n",huffman_table[j].codeword,huffman_table[j].codeword_len);
+            //i+1 = 位移幾次 + 1 = 有幾位
+            if(huffman_table[j].codeword==codeword&&huffman_table[j].codeword_len==(i+1)) {
+                printf("find codeword= %.2x (len = %d) in huffman tree\n",codeword,i+1);
+                return huffman_table[j].value;
+            }
+        }
+    }
+    printf("do not found!\n");
+    exit(1);
+}
+double c(int i) {
+    if (i == 0) {
+        return sqrt(1.0/2.0);
+    } else {
+        return 1.0;
+    }
+}
 double (*calcualte_mcu_block(FILE *fp, byte component_id))[8] {
-    //https://github.com/MROS/jpeg_tutorial/blob/d90271bf96da4f0ea772597aa2be74cb83e09296/doc/%E8%B7%9F%E6%88%91%E5%AF%ABjpeg%E8%A7%A3%E7%A2%BC%E5%99%A8%EF%BC%88%E5%9B%9B%EF%BC%89%E8%AE%80%E5%8F%96%E5%A3%93%E7%B8%AE%E5%9C%96%E5%83%8F%E6%95%B8%E6%93%9A.md
-    static int dc_block[5] = {0, 0, 0, 0, 0};
-    // 直流變量：
-    // 不斷從數據流中讀取一個 bit，直到可以對上直流霍夫曼表中的一個碼字，
+// void calcualte_mcu_block(FILE *fp,byte component_id) {
+    //https://github.com/MROS/jpeg_tutorial/blob/master/doc/%E8%B7%9F%E6%88%91%E5%AF%ABjpeg%E8%A7%A3%E7%A2%BC%E5%99%A8%EF%BC%88%E5%9B%9B%EF%BC%89%E8%AE%80%E5%8F%96%E5%A3%93%E7%B8%AE%E5%9C%96%E5%83%8F%E6%95%B8%E6%93%9A.md
+   // 每個 block 都是 8 * 8 ，最左上角的數值就是直流變量，要使用直流霍夫曼表來解碼；
+   //而餘下的 63 個數值是交流變量，使用交流霍夫曼表來解碼。
+    // DC:不斷從數據流中讀取一個 bit，直到可以對上直流霍夫曼表中的一個碼字，
     // 取出的對應信源編碼代表的是接下來還要讀入幾位，
     // 假如是 n 就繼續讀取 n bits ，以下表解碼後，就是直流變量。
     //  - bit 0..3: AC table (0..3)
@@ -331,120 +374,166 @@ double (*calcualte_mcu_block(FILE *fp, byte component_id))[8] {
     // 前一個代表直流(0)或交流(1)
     // 0000 0000 | 0000 0001 | 0001 0000 | 0001 0001
     double block[8][8];
+    static int dc_block[5] ={0,0,0,0,0};
     memset(block,0,sizeof(block));
     //DC在高位，必須轉為0x00或0x01
-    huffman_leaf* dc_table = huffman_table[huffman_table_index(component_mapping_huffman[component_id] >> 4)].start;
-    byte code_length;
-    unsigned int codeword = 0;
-    bool find_it = false;
-    for (int i = 0; i< huffman_table[huffman_table_index(component_mapping_huffman[component_id] >> 4)].ht_node_num; i++)
-    {
-        codeword = codeword << 1;
-        codeword+=fscanf_bit(fp);
-        if(dc_table[i].codeword == codeword) {
-            //找到對應碼字
-            code_length = dc_table[i].value;
-            find_it = true;
-        }
+    printf("pickup DC table %.2x\n",(component_mapping_huffman[component_id] >> 4)&0x0f);
+    byte dc_table_id = huffman_table_index((component_mapping_huffman[component_id] >> 4)&0x0f);
+    //從此顏色份量單元數據流的起點開始一位一位的讀入，直到讀入的編碼與該份量直流哈夫曼樹的某個碼字（葉子結點）一致，
+    //然後用直流哈夫曼樹查得該碼字對應的權值。
+    //權值（共8位）表示該直流份量數值的二進制位數，也就是接下來需要讀入的位數
+    byte need_read_bit = decode_huffman(fp,dc_table_id);
+    byte leading_bit;
+    if (need_read_bit) {
+        //譯碼
+        //讀入數據流並對照直流哈夫曼樹，第一個哈夫曼編碼為110，其權值為6，
+        //所以往後讀入6位數據“1001101”，
+        //譯碼成數值為77。因為每個顏色份量單元只有一個直流份量，所以下一個就是第一個交流份量了。
+        dc_block[component_id] += codeword_decode(fp,need_read_bit);
     }
-    assert(find_it==true);
-    dc_block[component_id] += !code_length ? 0 : codeword_decode(fp, code_length);
+    printf("DC completed!\n");
+    //c) 取得 N 位, 計算 Diff 值
+    //  d) DC + = Diff
+    //  e) 寫入 DC 值:      " vector[0]=DC "
     block[0][0] = dc_block[component_id];
-    //     讀取交流變量
-    // 再接着取出 bit 直到對上交流霍夫曼表的一個碼字，取出對應信源編碼。
-    // 這個信源編碼代表的意義爲
-    // AC在低位，只需要在高位加入0x1
-    huffman_leaf* ac_table = huffman_table[huffman_table_index((component_mapping_huffman[component_id] & 0x0f) | 0x10)].start;
-    for(int i=0; i<63;)
-    {
-        codeword = 0;
-        find_it = false;
-        for (int j = 0;
-             j< huffman_table[huffman_table_index((component_mapping_huffman[component_id] &
-                                                                                           0x0f) | 0x10)].ht_node_num; j++) {
-            codeword = codeword << 1;
-            codeword+=fscanf_bit(fp);
-            if(dc_table[j].codeword == codeword) {
-                //找到對應碼字
-                code_length = dc_table[j].value;
-                find_it = true;
-            }
+    printf("pickup AC table %.2x\n",(component_mapping_huffman[component_id])&0x0f);
+    byte ac_table_id = huffman_table_index((component_mapping_huffman[component_id])&0x0f);
+    //------- 循環處理每個 AC 直到 EOB 或者處理到 64 個 AC
+    byte zerosnum_needread,zerosnum;
+    for (int i = 0; i< 64;) {
+        zerosnum_needread = decode_huffman(fp,dc_table_id);
+        //權值的高4位表示當前數值前面有多少個連續的零，低4位表示該交流份量數值的二進制位數，也就是接下來需要讀入的位數。
+        // b) Huffman 解碼, 得到 (前面 0 數量, 組號)
+        // [記住: 如果是(0,0) 就是 EOB 了]
+        if(zerosnum_needread == 0x00) {
+            break;
         }
-        assert(find_it==true);
-        // 高 4 bits 代表接下來的數值連續有幾個 0
-        // 低 4 bits 代表這些 0 之後跟著的數值的位數，假如是 n 就繼續讀取 n bits ，以下表解碼後，就是這些 0 之後跟着的數值。
-        // 有兩個特殊的信源編碼，含義與上述不同
-        // 0x00 代表接下來所有的交流變量全爲 0
-        // 0xF0 代表接下來有 16 個 0
-        // 當以下兩種狀況發生時，代表交流變量已經讀取完畢
-        // 1.63 個交流編碼都已經讀完
-        // 2.讀到 0x00 ，直到剩下的交流變量全爲 0
-        switch(code_length) {
-        case 0x00:
-            for (int k = 0; k<16; k++) {
+        need_read_bit = zerosnum_needread & 0x0f;
+        zerosnum = (zerosnum_needread >> 4) & 0x0f;
+        if (need_read_bit) {
+            //c) 取得 N 位(組號) 計算 AC
+            //d) 寫入相應數量的 0
+            for (byte j = 0;j< zerosnum;j++) {
                 block[i/8][i%8] = 0.0;
                 i++;
             }
-            break;
-        case 0xf0:
-            while(i<63) {
-                block[i/8][i%8] = 0.0;
-                i++;
-            }
-            break;
-        default:
-            for (int k=0; k<(code_length >> 4); k++) {
-                block[i/8][i%8] = 0.0;
-                i++;
-            }
-            block[i/8][i%8] = codeword_decode(fp, code_length & 0x0f);
+            block[i/8][i%8] = codeword_decode(fp,need_read_bit);
             i++;
-            break;
         }
     }
+    // 1) 反量化 64 個矢量 : "for (i=0;i<=63;i++) vector[i]*=quant[i]" (注意防止溢出)
+    for (int i = 0;i<63;i++) {
+        block[i/8][i%8] *= quantize_table_list[component_id][i];
+    }
+    // 2) 重排列 64 個矢量到 8x8 的塊中
+    double tmp[8][8];
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            tmp[i][j] = block[zigzag_index[i][j]/8][zigzag_index[i][j]%8];
+        }
+    }
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            block[i][j] = tmp[i][j];
+        }
+    }
+
+    // 3) 對 8x8 的塊作 IDCT
+    //TODO: find AA&N?????
+    double s[8][8];
+    memset(tmp,0,sizeof(tmp));
+    for (int j = 0; j < 8; j++) {
+        for (int x = 0; x < 8; x++) {
+            for (int y = 0; y < 8; y++) {
+                s[j][x] += c (y) * block[x][y] * cos_cache[(j + j + 1) * y];
+            }
+            s[j][x] = s[j][x] / 2.0;
+        }
+    }
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            for (int x = 0; x < 8; x++) {
+                tmp[i][j] += c(x) * s[j][x] * cos_cache[(i + i + 1) * x];
+            }
+            tmp[i][j] = tmp[i][j] / 2.0;
+        }
+    }
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            block[i][j] = tmp[i][j];
+        }
+    }
+    //4) 將所有的 8bit 數加上 128
+    //5) 轉換 YCbCr 到 RGB
     return block;
 }
 
-double**** mcu_component(FILE *fp, byte id)
-{
-    //一個顏色分量內部各個 block 的順序:由左到右，再由上到下
-    double** mcu_block[f0.frame_components[id].horizontal_sample][f0.frame_components[id].vertical_sample];
-    for (int i =1; i<f0.frame_components[id].horizontal_sample; i ++) {
-        for (int j = 1; j<f0.frame_components[id].vertical_sample; j++) {
-            mcu_block[i][j] = calcualte_mcu_block(fp, id);
-        }
+byte chomp(double x) {
+    if (x > 255.0) {
+        return 255;
+    } else if (x < 0) {
+        return 0;
+    } else {
+        return (byte) x;
     }
-    return mcu_block;
 }
-//TODO
-void dequantize() {}
-void dezigzag() {}
-void inversedct() {}
-void upsample() {}
 
 void calculate_mcu(FILE* fp)
 {
+    //一個 (Hmax*8,Vmax*8) 的塊被稱作 MCU (Minimun Coded Unix) 前面例子中一個
+    // MCU = YDU,YDU,YDU,YDU,CbDU,CrDU
+
+    // 如果  HY =1, VY=1
+    //       HCb=1, VCb=1
+    //       HCr=1, VCr=1
+    // 這樣 (Hmax=1,Vmax=1), MCU 只有 8x8 大, MCU = YDU,CbDU,CrDU
     //MCU 的寬 = 8 * 最高水平採樣率
     int mcu_width = 8 * f0.hmax;
     // MCU 的高 = 8 * 最高垂直採樣率
     int mcu_height = 8 * f0.vmax;
-    //TODO
-    int mcu_number_col = ((f0.height + mcu_height - 1) / mcu_height);
-    int mcu_number_row = ((f0.width + mcu_width - 1) / mcu_width);
+    //算出有幾個MCU
+    int mcu_number_col = ceil((f0.height) / mcu_height);
+    int mcu_number_row = ceil((f0.width) / mcu_width);
+    // double image[mcu_height][mcu_width];
+
+    rgb_element** rbg_image = (rgb_element**) malloc(f0.height*f0.width*sizeof(rgb_element**));
+    // double** mcu_block = (double**) malloc(8*8*sizeof(double**));
+    double** data_unit[5][mcu_width][mcu_height]; //Y Cb Cr
     //MCU 的順序:由左到右，再由上到下
-    double** mcu[mcu_number_col][mcu_number_row][3];
     for (int i  = 0; i<mcu_number_col; i++) {
         for (int j = 0; j<mcu_number_row; j++) {
-            for (int id = 0 ; id<3; id++) {
-                mcu[i][j][id] = mcu_component(fp,id);
+            //一個顏色分量內部各個 block 的順序:由左到右，再由上到下
+            //# Cb 是一個四階陣列
+            //# 前兩階描述 block 的位置，後兩階描述要擷取的是這 8*8 中的哪一個點
+            //MCU[i][j].Cb = Cb[new_i / 8][new_j / 8][new_i % 8][new_j % 8]
+            for (int qt_id = 0;qt_id<f0.components_num;qt_id++)  {
+                double** mcu = (double**) malloc(f0.hmax*f0.vmax*sizeof(double**));
+                for (int a =0; a<f0.frame_components[qt_id].horizontal_sample; a++) {
+                    for (int b = 0; b<f0.frame_components[qt_id].vertical_sample; b++) {
+                        data_unit[qt_id][a][b] = calcualte_mcu_block(fp, qt_id);
+                        // mcu[a][b] = mcu_block;
+                    }
+                }
             }
-            //decode
-            dequantize();
-            dezigzag();
-            inversedct();
-            upsample();
+            //1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q
+            //4) 將所有的 8bit 數加上 128
+            //另外，由於離散餘弦變化要求定義域的對稱，所以在編碼時把RGB的數值範圍從[0，255]統一減去128偏移成[-128，127]。
+            //因此解碼時必須為每個份量加上128。具體公式如下：
+            // R=Y                       +1.402*Cb     +128;
+            // G=Y-0.34414*Cr    -0.71414*Cb   +128;
+            // B=Y                       +1.772*Cb     +128;
+            //5) 轉換 YCbCr 到 RGB
+            rbg_image[i][j].r = chomp(data_unit[0][i/8][j/8][i%8][j%8] + 1.402*data_unit[2][i/8][j/8][i%8][j%8] + 128);
+            rbg_image[i][j].g = chomp(data_unit[0][i/8][j/8][i%8][j%8] - 0.34414*data_unit[1][i/8][j/8][i%8][j%8] - 0.71414*data_unit[2][i/8][j/8][i%8][j%8] + 128);
+            rbg_image[i][j].b = chomp(data_unit[0][i/8][j/8][i%8][j%8] + 1.772*data_unit[1][i/8][j/8][i%8][j%8] + 128);
+
         }
     }
+    // double** mcu[mcu_number_row][mcu_number_col][3];
+    // 每個 component: 3 bytes
+    //  - component id (1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q)
+    //  - 採樣係數 (bit 0-3 vert., 4-7 hor.)
+    //  - quantization table 號
     // return mcu;
 }
 
@@ -464,6 +553,7 @@ int main(int argc,char* argv[])
     bool b_SOI = false;
     bool b_EOI = false;
     double*** mcu;
+    init_cos_cache();
     while (fread(&h,1, 1,fp)) {
         // printf("fuck");
         fread(&l,1, 1,fp);
@@ -491,7 +581,7 @@ int main(int argc,char* argv[])
             case SOS:
                 printf("\nread SOS\n");
                 read_sos(fp);
-                // calculate_mcu(fp);
+                calculate_mcu(fp);
                 break;
             case APP0:
             case APP1:

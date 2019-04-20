@@ -13,7 +13,27 @@ typedef uint8_t byte;
 
 typedef uint16_t word;
 
-uint16_t read_word_to_bigendian(FILE* fp) {
+int zigzag_index[8][8] = {
+    0, 1, 5, 6,14,15,27,28,
+    2, 4, 7,13,16,26,29,42,
+    3, 8,12,17,25,30,41,43,
+    9,11,18,24,31,40,44,53,
+    10,19,23,32,39,45,52,54,
+    20,22,33,38,46,51,55,60,
+    21,34,37,47,50,56,59,61,
+    35,36,48,49,57,58,62,63
+};
+
+typedef struct {
+    byte r;
+    byte g;
+    byte b;
+}rgb_element;
+
+typedef double mcu_block[][8];
+
+uint16_t read_word_to_bigendian(FILE* fp)
+{
     byte high,low;
     fread(&high, 1, 1, fp);
     fread(&low, 1, 1, fp);
@@ -55,5 +75,16 @@ uint16_t read_word_to_bigendian(FILE* fp) {
 #define DHT 0xC4
 #define SOS 0xDA
 #define EOI 0xD9
+
+#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
+#define BYTE_TO_BINARY(byte)  \
+  (byte & 0x0080 ? '1' : '0'), \
+  (byte & 0x0040 ? '1' : '0'), \
+  (byte & 0x0020 ? '1' : '0'), \
+  (byte & 0x0010 ? '1' : '0'), \
+  (byte & 0x0008 ? '1' : '0'), \
+  (byte & 0x0004 ? '1' : '0'), \
+  (byte & 0x0002 ? '1' : '0'), \
+  (byte & 0x0001 ? '1' : '0')
 
 #endif
