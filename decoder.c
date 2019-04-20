@@ -26,7 +26,7 @@ typedef struct {
 typedef struct huffman_leaf {
     int codeword;
     int codeword_len;
-    byte content;
+    byte value;
 } huffman_leaf;
 
 typedef struct {
@@ -161,18 +161,18 @@ void read_frame(FILE *fp)
         fread(&((f0.frame_components[component_id-1]).qantize_table_id),1,1,fp);
         printf("qt destination = %d\n",(f0.frame_components[component_id-1]).qantize_table_id);
     }
-    // return f0;
 }
 
 void read_ht(FILE* fp)
 {
-    byte height_info[16];
+    byte huffman_length[16];
     int len = read_word_to_bigendian(fp);
     printf("section length = %x (hex) %u (dec)\n",len,len);
     len = len - 2;
     int ht_node_num;
-    byte content;
+    byte ht_length;
     byte class_id;
+    byte ht_value;
     while (len > 0) {
         // fscanf(fp,"%"SCNd8,&class_id);
         fread(&class_id,1,1,fp);
@@ -185,44 +185,58 @@ void read_ht(FILE* fp)
         // 0x10表示AC交流0號表；
         // 0x11表示AC交流1號表。
         printf("Huffman Table class & qt destination %.2u\n",class_id);
-        memset(height_info, 0, sizeof(height_info));//huffman tree height = codeword length
+        // （2~17字節）為不同位數的碼字的數量。
+        //這16個數值實際意義為：沒有1位和4位的哈夫曼碼字；2位和3位的碼字各有2個；5位碼字有5個；6位和8位碼字各有1個；7位碼字各有6個；沒有9位或以上的碼字。
         ht_node_num = 0;
         for(int i = 0; i<16; i++) {
-            // if(fscanf(fp,"%"SCNd8,&height_info[i])!=1) {
+            //huffman tree height = codeword length
+            // if(fscanf(fp,"%"SCNd8,&huffman_length[i])!=1) {
             //     printf("read HT height info error");
             //     exit(1);
             // }
-            fread(&height_info[i],1,1,fp);
+            fread(&(ht_length),1,1,fp);
+            huffman_length[i] = ht_length;
             len--;
-            ht_node_num += height_info[i];
+            ht_node_num += huffman_length[i];
         }
-        //array implement HT, root is HT[1]
+
         huffman_table[huffman_table_index(class_id)].ht_node_num = ht_node_num;
         huffman_leaf* ht_leaf = (huffman_leaf*)malloc((ht_node_num)*sizeof(
                                     huffman_leaf));
-        int leaf_index = 0;
-        unsigned int codeword = 0;
-        for(int height=1; height<=16; height++) {
-            for(int j = 0; j<height_info[height]; j++) {
+        word codeword = 0;
+        printf("----------\ndecoding (total have %d node)...\n",ht_node_num);
+
+        //綠色部分（18~34字節）為編碼內容。
+        //由藍色部分數據知道，此哈夫曼樹有0+2+2+0+5+1+6+1=17個葉子結點，即本字段應該有17個字節。
+        //這段數據表示17個葉子結點按從小到大排列，其權值依次為0、1、11、2、21、3、31、41……
+        //Value associated with each Huffman code –
+        //Specifies, for each i, the value associated with each Huffman code of length i. The meaning of each value is determined by the Huffman coding model. The Vi,j’s are the elements of the list HUFFVAL.
+        for(int height=0, leaf_index = 0; height<16; height++) {
+            //huffman code length = huffman tree height
+            printf("reading the %d bits length codeword (%.3d total)\n", height+1,huffman_length[height]);
+            for(int j = 0; j<huffman_length[height]; j++) {
                 // fscanf(fp,"%"SCNd8,&(ht_leaf[leaf_index].content));
-                fread(&(ht_leaf[leaf_index].content),1,1,fp);
-                ht_leaf[leaf_index].codeword_len = height;
+
+                fread(&(ht_value),1,1,fp);
+                len--;
+                ht_leaf[leaf_index].value = ht_value;
                 // 若高度相等：leaf[n] = leaf[n — 1] + 1
                 // 若高度差 1 ：leaf[n] = (leaf[n — 1] + 1) * 2
                 // 若高度差 k ：leaf[n] = (leaf[n — 1] + 1) * 2^k
                 //int foo = 0b1010;
                 //https://medium.com/@yc1043/%E8%B7%9F%E6%88%91%E5%AF%AB-jpeg-%E8%A7%A3%E7%A2%BC%E5%99%A8-%E4%B8%89-%E8%AE%80%E5%8F%96%E9%87%8F%E5%8C%96%E8%A1%A8-%E9%9C%8D%E5%A4%AB%E6%9B%BC%E8%A1%A8-585f2cf4c494
-                ht_leaf[leaf_index].codeword = ((int)pow(2,
-                                                height - ht_leaf[leaf_index-1].codeword_len)) * (codeword);
+                // ht_leaf[leaf_index].codeword = ((int)pow(2,
+                                                // height - ht_leaf[leaf_index-1].codeword_len)) * (codeword);
+                ht_leaf[leaf_index].codeword = (codeword++);
+                ht_leaf[leaf_index].codeword_len = height+1;
+                printf("leaf #%d | codword %x | source value %.2x\n",leaf_index, ht_leaf[leaf_index].codeword, ht_value);
                 leaf_index++;
-                codeword++;
             }
-            codeword=codeword<<1;
+            //不斷往左移一位
+            codeword = codeword<<1;
         }
-        len -= ht_node_num;
         huffman_table[huffman_table_index(class_id)].start = ht_leaf;
     }
-    // return huffman_table;
 }
 
 void read_sos(FILE* fp)
@@ -332,7 +346,7 @@ double (*calcualte_mcu_block(FILE *fp, byte component_id))[8] {
         codeword+=fscanf_bit(fp);
         if(dc_table[i].codeword == codeword) {
             //找到對應碼字
-            code_length = dc_table[i].content;
+            code_length = dc_table[i].value;
             find_it = true;
         }
     }
@@ -355,7 +369,7 @@ double (*calcualte_mcu_block(FILE *fp, byte component_id))[8] {
             codeword+=fscanf_bit(fp);
             if(dc_table[j].codeword == codeword) {
                 //找到對應碼字
-                code_length = dc_table[j].content;
+                code_length = dc_table[j].value;
                 find_it = true;
             }
         }
