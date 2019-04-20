@@ -197,7 +197,7 @@ void read_ht(FILE* fp)
         // 0x01表示DC直流1號表；
         // 0x10表示AC交流0號表；
         // 0x11表示AC交流1號表。
-        printf("Huffman Table class & qt destination %.2u\n",class_id);
+        printf("Huffman Table class & destination %.2x\n",class_id);
         // （2~17字節）為不同位數的碼字的數量。
         //這16個數值實際意義為：沒有1位和4位的哈夫曼碼字；2位和3位的碼字各有2個；5位碼字有5個；6位和8位碼字各有1個；7位碼字各有6個；沒有9位或以上的碼字。
         ht_node_num = 0;
@@ -278,7 +278,7 @@ void read_sos(FILE* fp)
         // fscanf(fp,"%"SCNd8,&component_mapping_huffman[component_id]);
         fread(&destination,1,1,fp);
         len = len-2;
-        printf("# %d component select %.2x destination\n",component_id,destination);
+        printf("# %d component select %.2x (DC) and %.2x(AC)  destination\n",component_id,destination>>4,(destination&0x0f)|0x10);
         component_mapping_huffman[component_id-0x01] = destination;
     }
     //   - 忽略 3 bytes (???)
@@ -299,7 +299,7 @@ byte read_one_bit(FILE *fp)
     if (!count) {
         // fscanf(fp,"%"SCNd8,&buffer);
         fread(&buffer,1,1,fp);
-        printf("-------\nread this buffer=%.2x\n",buffer);
+        // printf("-------\nread this buffer=%.2x\n",buffer);
         //https://www.jianshu.com/p/ccb52e9cd2e4
         //由於JPEG中以0XFF來做為特殊標記符，
         //因此，如果某個像素的取值為0XFF，
@@ -319,7 +319,7 @@ byte read_one_bit(FILE *fp)
     byte bit = (buffer >> (7 - count))&0x01;
     count = (count == 7 ? 0 : count + 1);
     //每八一次
-    printf("------\nread bit %x\n",bit);
+    // printf("------\nread bit %d\n",bit);
     return bit;
 }
 
@@ -327,7 +327,7 @@ byte read_one_bit(FILE *fp)
 int codeword_decode (FILE *fp, byte need_read_length)
 {
     byte leading = read_one_bit(fp);
-    int decoding_code = 1;
+    int decoding_code = 0x0001;
     byte c;
     for (int i = 1; i < need_read_length; i++) {
         c = read_one_bit(fp);
@@ -347,10 +347,10 @@ byte decode_huffman(FILE *fp, byte huffman_table_id)
     for(int i = 0; ; i++) {
         codeword =codeword<<1;
         codeword |= (word)read_one_bit(fp);
-        printf("now codeword is %.2x(hex) |"BYTE_TO_BINARY_PATTERN,codeword,
-               BYTE_TO_BINARY(codeword >> 8));
-        printf(BYTE_TO_BINARY_PATTERN"(binary) with length = %d \n",
-               BYTE_TO_BINARY(codeword),i+1);
+        // printf("now codeword is %.2x(hex) |"BYTE_TO_BINARY_PATTERN,codeword,
+        //        BYTE_TO_BINARY(codeword >> 8));
+        // printf(BYTE_TO_BINARY_PATTERN"(binary) with length = %d \n",
+        //        BYTE_TO_BINARY(codeword),i+1);
         for(int j = 0; j<ht_node_num; j++) {
             // printf("the huffman=%.2x(hex) len=%d \n",huffman_table[j].codeword,huffman_table[j].codeword_len);
             //i+1 = 位移幾次 + 1 = 有幾位
@@ -386,12 +386,13 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
     //  - bit 4..7: DC table (0..3)
     // 前一個代表直流(0)或交流(1)
     // 0000 0000 | 0000 0001 | 0001 0000 | 0001 0001
+    //在整個圖片解碼的開始, 你需要先初始化 DC 值為 0.
     static int dc_block[5] = {0,0,0,0,0};
     double block[8][8];
     memset(block,0,sizeof(block));
     //DC在高位，必須轉為0x00或0x01
-    printf("pickup DC table %.2x\n",
-           (component_mapping_huffman[component_id] >> 4)&0x0f);
+    // printf("pickup DC table %.2x\n",
+    //        (component_mapping_huffman[component_id] >> 4)&0x0f);
     byte dc_table_id = huffman_table_index((component_mapping_huffman[component_id]>> 4)&0x0f);
     //從此顏色份量單元數據流的起點開始一位一位的讀入，直到讀入的編碼與該份量直流哈夫曼樹的某個碼字（葉子結點）一致，
     //然後用直流哈夫曼樹查得該碼字對應的權值。
@@ -403,31 +404,31 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
         //讀入數據流並對照直流哈夫曼樹，第一個哈夫曼編碼為110，其權值為6，
         //所以往後讀入6位數據“1001101”，
         //譯碼成數值為77。因為每個顏色份量單元只有一個直流份量，所以下一個就是第一個交流份量了。
+        //c) 取得 N 位, 計算 Diff 值
+        //  d) DC + = Diff
         dc_block[component_id] += codeword_decode(fp,need_read_bit);
     }
-    printf("DC completed!\n");
-    //c) 取得 N 位, 計算 Diff 值
-    //  d) DC + = Diff
+    // printf("DC completed!\n");
     //  e) 寫入 DC 值:      " vector[0]=DC "
     block[0][0] = dc_block[component_id];
-    printf("pickup AC table %.2x\n",(component_mapping_huffman[component_id])&0x0f);
-    byte ac_table_id = huffman_table_index((component_mapping_huffman[component_id])
-                                           &0x0f);
+    // printf("pickup AC table %.2x\n",(component_mapping_huffman[component_id]&0x0f)|0x10);
+    byte ac_table_id = huffman_table_index((component_mapping_huffman[component_id]
+                                           &0x0f)|0x10);
     //------- 循環處理每個 AC 直到 EOB 或者處理到 64 個 AC
     byte zerosnum_needread,zerosnum;
     for (int i = 0; i< 64;) {
-        printf("this is # %d AC block\n",i);
-        zerosnum_needread = decode_huffman(fp,dc_table_id);
+        // printf("this is # %d AC block\n",i);
+        zerosnum_needread = decode_huffman(fp,ac_table_id);
         //權值的高4位表示當前數值前面有多少個連續的零，低4位表示該交流份量數值的二進制位數，也就是接下來需要讀入的位數。
         // b) Huffman 解碼, 得到 (前面 0 數量, 組號)
         // [記住: 如果是(0,0) 就是 EOB 了]
         if(zerosnum_needread == 0x00) {
-            printf("0x00 EOB!\n");
+            // printf("0x00 EOB!\n");
             break;
         }
         need_read_bit = zerosnum_needread & 0x0f;
         zerosnum = (zerosnum_needread >> 4) & 0x0f;
-        printf("there are %u leading zero, %u need to read\n",need_read_bit,zerosnum);
+        // printf("there are %u leading zero, %u need to read\n",need_read_bit,zerosnum);
         for (byte j = 0; j< zerosnum; j++) {
             block[i/8][i%8] = 0.0;
             i++;
@@ -440,12 +441,12 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
         }
     }
     // 1) 反量化 64 個矢量 : "for (i=0;i<=63;i++) vector[i]*=quant[i]" (注意防止溢出)
-    printf("dequantize start!\n");
+    // printf("dequantize start!\n");
     for (int i = 0; i<63; i++) {
         block[i/8][i%8] *= quantize_table_list[component_id][i];
     }
     // 2) 重排列 64 個矢量到 8x8 的塊中
-    printf("zigzag rearrange start!\n");
+    // printf("zigzag rearrange start!\n");
     double tmp[8][8];
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
@@ -463,7 +464,7 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
     double s[8][8];
     memset(tmp,0,sizeof(tmp));
     memset(s,0,sizeof(s));
-    printf("IDCT start!!!!\n");
+    // printf("IDCT start!!!!\n");
     for (int j = 0; j < 8; j++) {
         for (int x = 0; x < 8; x++) {
             for (int y = 0; y < 8; y++) {
@@ -483,15 +484,15 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
             block[i][j] = tmp[i][j];
-            printf("%8x ",&(block[i][j]));
+            // printf("%8x ",&(block[i][j]));
         }
-        printf("\n");
+        // printf("\n");
     }
     //4) 將所有的 8bit 數加上 128
     //5) 轉換 YCbCr 到 RGB
     // printf("\nlocation = %8X\n", (unsigned int) &block);
     // printf("\nlocation2 = %8X\n", (unsigned int) &(block[5][4]));
-    return *block;
+    return &block;
 }
 
 byte chomp(double x)
@@ -556,12 +557,12 @@ void calculate_mcu(FILE* fp)
                         // printf("\nlocation = %8X\n", (unsigned int) &(*(data_unit[qt_id][a][b])));
                         // printf("\nlocation2 = %8X\n", (unsigned int) &((*data_unit[qt_id][a][b])[5][4]));
                         // printf("\nlocation2 = %8X\n", (unsigned int) &((*test)[5][4]));
-                        for (int x = 0; x < 8; x++) {
-                            for (int y = 0; y < 8; y++) {
-                                printf("%8x ",data_unit[qt_id][a][b][x][y]);
-                            }
-                            printf("\n");
-                        }
+                        // for (int x = 0; x < 8; x++) {
+                        //     for (int y = 0; y < 8; y++) {
+                        //         printf("%g ",data_unit[qt_id][a][b][x][y]);
+                        //     }
+                        //     printf("\n");
+                        // }
                     }
                 }
             }
@@ -596,16 +597,17 @@ void calculate_mcu(FILE* fp)
             // MCU[i][j].Cb = Cb[new_i / 8][new_j / 8][new_i % 8][new_j % 8]
 
             // # Y, Cr 的算法跟 Cb 完全相同，省略之
-            // rbg_image[i][j].r = chomp((*(data_unit[0][i*block_index_i_Y/8][j*block_index_j_Y/8]))[i*block_index_i_Y%8][j*block_index_j_Y%8]
-            //                           + 1.402*(*(data_unit[2][i*block_index_i_Cr/8][j*block_index_j_Cr/8]))[i*block_index_i_Cr%8][j*block_index_j_Cr%8]
-            //                           + 128);
-            // rbg_image[i][j].g = chomp((*(data_unit[0][i*block_index_i_Y/8][j*block_index_j_Y/8]))[i*block_index_i_Y%8][j*block_index_j_Y%8]
-            //                           - 0.34414*(*(data_unit[1][i*block_index_i_Cb/8][j*block_index_j_Cb/8]))[i*block_index_i_Cb%8][j*block_index_j_Cb%8]
-            //                           - 0.71414*(*(data_unit[2][i*block_index_i_Cr/8][j*block_index_j_Cr/8]))[i*block_index_i_Cr%8][j*block_index_j_Cr%8]
-            //                           + 128);
-            // rbg_image[i][j].b = chomp((*(data_unit[0][i*block_index_i_Y/8][j*block_index_j_Y/8]))[i*block_index_i_Y%8][j*block_index_j_Y%8]
-            //                           + 1.772*(*(data_unit[1][i*block_index_i_Cb/8][j*block_index_j_Cb/8]))[i*block_index_i_Cb%8][j*block_index_j_Cb%8]
-            //                           + 128);
+            printf("????\n");
+            rbg_image[i][j].r = chomp(data_unit[0][i*block_index_i_Y/8][j*block_index_j_Y/8][i*block_index_i_Y%8][j*block_index_j_Y%8]
+                                      + 1.402*data_unit[2][i*block_index_i_Cr/8][j*block_index_j_Cr/8][i*block_index_i_Cr%8][j*block_index_j_Cr%8]
+                                      + 128);
+            rbg_image[i][j].g = chomp(data_unit[0][i*block_index_i_Y/8][j*block_index_j_Y/8][i*block_index_i_Y%8][j*block_index_j_Y%8]
+                                      - 0.34414*data_unit[1][i*block_index_i_Cb/8][j*block_index_j_Cb/8][i*block_index_i_Cb%8][j*block_index_j_Cb%8]
+                                      - 0.71414*data_unit[2][i*block_index_i_Cr/8][j*block_index_j_Cr/8][i*block_index_i_Cr%8][j*block_index_j_Cr%8]
+                                      + 128);
+            rbg_image[i][j].b = chomp(data_unit[0][i*block_index_i_Y/8][j*block_index_j_Y/8][i*block_index_i_Y%8][j*block_index_j_Y%8]
+                                      + 1.772*data_unit[1][i*block_index_i_Cb/8][j*block_index_j_Cb/8][i*block_index_i_Cb%8][j*block_index_j_Cb%8]
+                                      + 128);
 
         }
     }
