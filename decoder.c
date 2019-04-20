@@ -327,7 +327,7 @@ byte read_one_bit(FILE *fp)
 int codeword_decode (FILE *fp, byte need_read_length)
 {
     byte leading = read_one_bit(fp);
-    int decoding_code = 0x0001;
+    int decoding_code = 1;
     byte c;
     for (int i = 1; i < need_read_length; i++) {
         c = read_one_bit(fp);
@@ -336,6 +336,7 @@ int codeword_decode (FILE *fp, byte need_read_length)
         //正數就是照一般二進位計算，負數就是對正數的碼字取反而已
     }
     decoding_code = leading ? decoding_code: -decoding_code;
+    printf("decoding = %d\n",decoding_code);
     return decoding_code;
 }
 
@@ -344,7 +345,7 @@ byte decode_huffman(FILE *fp, byte huffman_table_id)
     huffman_leaf* huffman_table = huffman_tables[huffman_table_id].start;
     int ht_node_num = huffman_tables[huffman_table_id].ht_node_num;
     word codeword = 0x0000;
-    for(int i = 0; ; i++) {
+    for(int i = 0; i<16; i++) {
         codeword =codeword<<1;
         codeword |= (word)read_one_bit(fp);
         // printf("now codeword is %.2x(hex) |"BYTE_TO_BINARY_PATTERN,codeword,
@@ -359,11 +360,9 @@ byte decode_huffman(FILE *fp, byte huffman_table_id)
                 return huffman_table[j].value;
             }
         }
-        if(i>=16) {
-            printf("do not find!\n");
-            i = 0, codeword=0;
-        }
     }
+    printf("do not find\n");
+    exit(1);
 }
 double c(int i)
 {
@@ -391,8 +390,8 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
     double block[8][8];
     memset(block,0,sizeof(block));
     //DC在高位，必須轉為0x00或0x01
-    // printf("pickup DC table %.2x\n",
-    //        (component_mapping_huffman[component_id] >> 4)&0x0f);
+    printf("pickup DC table %.2x\n",
+           (component_mapping_huffman[component_id] >> 4)&0x0f);
     byte dc_table_id = huffman_table_index((component_mapping_huffman[component_id]>> 4)&0x0f);
     //從此顏色份量單元數據流的起點開始一位一位的讀入，直到讀入的編碼與該份量直流哈夫曼樹的某個碼字（葉子結點）一致，
     //然後用直流哈夫曼樹查得該碼字對應的權值。
@@ -408,27 +407,28 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
         //  d) DC + = Diff
         dc_block[component_id] += codeword_decode(fp,need_read_bit);
     }
-    // printf("DC completed!\n");
+    printf("DC completed!\n");
     //  e) 寫入 DC 值:      " vector[0]=DC "
     block[0][0] = dc_block[component_id];
-    // printf("pickup AC table %.2x\n",(component_mapping_huffman[component_id]&0x0f)|0x10);
+    printf("now block[0][0] = %lf\n",block[0][0]);
+    printf("pickup AC table %.2x\n",(component_mapping_huffman[component_id]&0x0f)|0x10);
     byte ac_table_id = huffman_table_index((component_mapping_huffman[component_id]
                                            &0x0f)|0x10);
     //------- 循環處理每個 AC 直到 EOB 或者處理到 64 個 AC
     byte zerosnum_needread,zerosnum;
-    for (int i = 0; i< 64;) {
-        // printf("this is # %d AC block\n",i);
+    for (int i = 1; i< 64;) {
+        printf("this is # %d AC block\n",i);
         zerosnum_needread = decode_huffman(fp,ac_table_id);
         //權值的高4位表示當前數值前面有多少個連續的零，低4位表示該交流份量數值的二進制位數，也就是接下來需要讀入的位數。
         // b) Huffman 解碼, 得到 (前面 0 數量, 組號)
         // [記住: 如果是(0,0) 就是 EOB 了]
         if(zerosnum_needread == 0x00) {
-            // printf("0x00 EOB!\n");
+            printf("0x00 EOB!\n");
             break;
         }
         need_read_bit = zerosnum_needread & 0x0f;
         zerosnum = (zerosnum_needread >> 4) & 0x0f;
-        // printf("there are %u leading zero, %u need to read\n",need_read_bit,zerosnum);
+        printf("there are %u leading zero, %u need to read\n",need_read_bit,zerosnum);
         for (byte j = 0; j< zerosnum; j++) {
             block[i/8][i%8] = 0.0;
             i++;
@@ -440,13 +440,20 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
             i++;
         }
     }
+    printf("gogogogo\n");
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            printf("%g ",(block[i][j]));
+        }
+        printf("\n");
+    }
     // 1) 反量化 64 個矢量 : "for (i=0;i<=63;i++) vector[i]*=quant[i]" (注意防止溢出)
-    // printf("dequantize start!\n");
-    for (int i = 0; i<63; i++) {
+    printf("dequantize start!\n");
+    for (int i = 0; i<64; i++) {
         block[i/8][i%8] *= quantize_table_list[component_id][i];
     }
     // 2) 重排列 64 個矢量到 8x8 的塊中
-    // printf("zigzag rearrange start!\n");
+    printf("zigzag rearrange start!\n");
     double tmp[8][8];
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
@@ -464,7 +471,7 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
     double s[8][8];
     memset(tmp,0,sizeof(tmp));
     memset(s,0,sizeof(s));
-    // printf("IDCT start!!!!\n");
+    printf("IDCT start!!!!\n");
     for (int j = 0; j < 8; j++) {
         for (int x = 0; x < 8; x++) {
             for (int y = 0; y < 8; y++) {
@@ -557,12 +564,12 @@ void calculate_mcu(FILE* fp)
                         // printf("\nlocation = %8X\n", (unsigned int) &(*(data_unit[qt_id][a][b])));
                         // printf("\nlocation2 = %8X\n", (unsigned int) &((*data_unit[qt_id][a][b])[5][4]));
                         // printf("\nlocation2 = %8X\n", (unsigned int) &((*test)[5][4]));
-                        // for (int x = 0; x < 8; x++) {
-                        //     for (int y = 0; y < 8; y++) {
-                        //         printf("%g ",data_unit[qt_id][a][b][x][y]);
-                        //     }
-                        //     printf("\n");
-                        // }
+                        for (int x = 0; x < 8; x++) {
+                            for (int y = 0; y < 8; y++) {
+                                printf("%g ",data_unit[qt_id][a][b][x][y]);
+                            }
+                            printf("\n");
+                        }
                     }
                 }
             }
