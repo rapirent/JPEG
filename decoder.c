@@ -531,8 +531,7 @@ void calculate_mcu(FILE* fp)
     int mcu_number_row = ceil((f0.width) / mcu_width);
     // double image[mcu_height][mcu_width];
 
-    rgb_element** rbg_image = (rgb_element**) malloc(f0.height*f0.width*sizeof(
-                                  rgb_element**));
+    rgb_element rbg_image[mcu_number_col][mcu_number_row];
     // double** mcu_block = (double**) malloc(8*8*sizeof(double**));
     // double** data_unit[5][mcu_width][mcu_height]; //Y Cb Cr
     //1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q
