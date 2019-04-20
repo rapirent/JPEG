@@ -30,7 +30,18 @@ typedef struct {
     byte b;
 }rgb_element;
 
-typedef double mcu_block[][8];
+#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
+#define BYTE_TO_BINARY(byte)  \
+  (byte & 0x0080 ? '1' : '0'), \
+  (byte & 0x0040 ? '1' : '0'), \
+  (byte & 0x0020 ? '1' : '0'), \
+  (byte & 0x0010 ? '1' : '0'), \
+  (byte & 0x0008 ? '1' : '0'), \
+  (byte & 0x0004 ? '1' : '0'), \
+  (byte & 0x0002 ? '1' : '0'), \
+  (byte & 0x0001 ? '1' : '0')
+
+typedef double mcu_small_block[8][8];
 
 uint16_t read_word_to_bigendian(FILE* fp)
 {
@@ -75,16 +86,5 @@ uint16_t read_word_to_bigendian(FILE* fp)
 #define DHT 0xC4
 #define SOS 0xDA
 #define EOI 0xD9
-
-#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
-#define BYTE_TO_BINARY(byte)  \
-  (byte & 0x0080 ? '1' : '0'), \
-  (byte & 0x0040 ? '1' : '0'), \
-  (byte & 0x0020 ? '1' : '0'), \
-  (byte & 0x0010 ? '1' : '0'), \
-  (byte & 0x0008 ? '1' : '0'), \
-  (byte & 0x0004 ? '1' : '0'), \
-  (byte & 0x0002 ? '1' : '0'), \
-  (byte & 0x0001 ? '1' : '0')
 
 #endif

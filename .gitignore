@@ -79,3 +79,4 @@ dkms.conf
 *.rar
 *.zip
 JpegParser/
+output
