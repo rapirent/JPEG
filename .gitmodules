@@ -1,0 +1,3 @@
+[submodule "LoadBMP"]
+	path = LoadBMP
+	url = https://github.com/Vallentin/LoadBMP.git
