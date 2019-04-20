@@ -7,6 +7,8 @@
 #include <math.h>
 #include <string.h>
 #include "util.h"
+#define LOADBMP_IMPLEMENTATION
+#include "./LoadBMP/loadbmp.h"
 
 typedef struct {
     byte horizontal_sample;
@@ -531,7 +533,8 @@ void calculate_mcu(FILE* fp)
     int mcu_number_row = ceil((f0.width) / mcu_width);
     // double image[mcu_height][mcu_width];
 
-    rgb_element rbg_image[mcu_number_col][mcu_number_row];
+    rgb_element mcu_rgb[mcu_number_col][mcu_number_row];
+    rgb_element rgb_image[f0.width][f0.height];
     // double** mcu_block = (double**) malloc(8*8*sizeof(double**));
     // double** data_unit[5][mcu_width][mcu_height]; //Y Cb Cr
     //1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q
@@ -604,19 +607,30 @@ void calculate_mcu(FILE* fp)
 
             // # Y, Cr 的算法跟 Cb 完全相同，省略之
             printf("????\n");
-            rbg_image[i][j].r = chomp(data_unit[0][i*block_index_i_Y/8][j*block_index_j_Y/8][i*block_index_i_Y%8][j*block_index_j_Y%8]
-                                      + 1.402*data_unit[2][i*block_index_i_Cr/8][j*block_index_j_Cr/8][i*block_index_i_Cr%8][j*block_index_j_Cr%8]
-                                      + 128);
-            rbg_image[i][j].g = chomp(data_unit[0][i*block_index_i_Y/8][j*block_index_j_Y/8][i*block_index_i_Y%8][j*block_index_j_Y%8]
-                                      - 0.34414*data_unit[1][i*block_index_i_Cb/8][j*block_index_j_Cb/8][i*block_index_i_Cb%8][j*block_index_j_Cb%8]
-                                      - 0.71414*data_unit[2][i*block_index_i_Cr/8][j*block_index_j_Cr/8][i*block_index_i_Cr%8][j*block_index_j_Cr%8]
-                                      + 128);
-            rbg_image[i][j].b = chomp(data_unit[0][i*block_index_i_Y/8][j*block_index_j_Y/8][i*block_index_i_Y%8][j*block_index_j_Y%8]
-                                      + 1.772*data_unit[1][i*block_index_i_Cb/8][j*block_index_j_Cb/8][i*block_index_i_Cb%8][j*block_index_j_Cb%8]
-                                      + 128);
+            for (int y = 0; y < mcu_height; y++) {
+                for (int x = 0; x < mcu_width; x++) {
+                    mcu_rgb[y][x].r = chomp(data_unit[0][y*block_index_i_Y/8][x*block_index_j_Y/8][y*block_index_i_Y%8][x*block_index_j_Y%8]
+                                            + 1.402*data_unit[2][y*block_index_i_Cr/8][x*block_index_j_Cr/8][y*block_index_i_Cr%8][x*block_index_j_Cr%8]
+                                            + 128);
+                    mcu_rgb[y][x].g = chomp(data_unit[0][y*block_index_i_Y/8][x*block_index_j_Y/8][y*block_index_i_Y%8][x*block_index_j_Y%8]
+                                            - 0.34414*data_unit[1][y*block_index_i_Cb/8][x*block_index_j_Cb/8][y*block_index_i_Cb%8][x*block_index_j_Cb%8]
+                                            - 0.71414*data_unit[2][y*block_index_i_Cr/8][x*block_index_j_Cr/8][y*block_index_i_Cr%8][x*block_index_j_Cr%8]
+                                            + 128);
+                    mcu_rgb[y][x].b = chomp(data_unit[0][y*block_index_i_Y/8][x*block_index_j_Y/8][y*block_index_i_Y%8][x*block_index_j_Y%8]
+                                            + 1.772*data_unit[1][y*block_index_i_Cb/8][x*block_index_j_Cb/8][y*block_index_i_Cb%8][x*block_index_j_Cb%8]
+                                            + 128);
+                }
+            }
+            for (int y = i*mcu_height; y < (i+1)*mcu_height; y++) {
+                for (int x = j*mcu_width; x < (j+1)*mcu_width; x++) {
+                    rgb_image[x][y] = mcu_rgb[y - i*mcu_height][x - j*mcu_width];
+                }
+            }
 
         }
     }
+
+    unsigned int err = loadbmp_encode_file("image.bmp", rgb_image, f0.width, f0.height, LOADBMP_RGBA);
     // double** mcu[mcu_number_row][mcu_number_col][3];
     // 每個 component: 3 bytes
     //  - component id (1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q)
