@@ -53,8 +53,8 @@ int huffman_table_index (byte index)
         //DC 1
         return 1;
     default:
-        exit(1);
         printf("huffman table index error");
+        exit(1);
     }
 }
 
@@ -389,7 +389,7 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
     // 0000 0000 | 0000 0001 | 0001 0000 | 0001 0001
     //在整個圖片解碼的開始, 你需要先初始化 DC 值為 0.
     static int dc_block[5] = {0,0,0,0,0};
-    double block[8][8];
+    static double block[8][8];
     memset(block,0,sizeof(block));
     //DC在高位，必須轉為0x00或0x01
     printf("pickup DC table %.2x\n",
@@ -442,79 +442,52 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
             i++;
         }
     }
-    printf("gogogogo\n");
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            printf("%g ",(block[i][j]));
-        }
-        printf("\n");
-    }
     // 1) 反量化 64 個矢量 : "for (i=0;i<=63;i++) vector[i]*=quant[i]" (注意防止溢出)
     printf("dequantize start!\n");
-    for (int i = 0; i<64; i++) {
-        block[i/8][i%8] *= quantize_table_list[component_id][i];
-    }
-    // 2) 重排列 64 個矢量到 8x8 的塊中
-    printf("zigzag rearrange start!\n");
-    double tmp[8][8];
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            tmp[i][j] = block[zigzag_index[i][j]/8][zigzag_index[i][j]%8];
-        }
-    }
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            block[i][j] = tmp[i][j];
-        }
-    }
-
-    // 3) 對 8x8 的塊作 IDCT
-    //TODO: find AA&N?????
-    double s[8][8];
-    memset(tmp,0,sizeof(tmp));
-    memset(s,0,sizeof(s));
-    printf("IDCT start!!!!\n");
-    for (int j = 0; j < 8; j++) {
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
-                s[j][x] += c (y) * block[x][y] * cos_cache[(j + j + 1) * y];
-            }
-            s[j][x] = s[j][x] / 2.0;
-        }
-    }
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            for (int x = 0; x < 8; x++) {
-                tmp[i][j] += c(x) * s[j][x] * cos_cache[(i + i + 1) * x];
-            }
-            tmp[i][j] = tmp[i][j] / 2.0;
-        }
-    }
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            block[i][j] = tmp[i][j];
-            // printf("%8x ",&(block[i][j]));
-        }
-        // printf("\n");
+    printf("use quantize table id = %d\n quantize =\n",(f0.frame_components[component_id]).qantize_table_id);
+    for (int quantize_i = 0; quantize_i<64; quantize_i++) {
+        block[quantize_i/8][quantize_i%8] *=
+        quantize_table_list[(f0.frame_components[component_id]).qantize_table_id][quantize_i];
     }
     //4) 將所有的 8bit 數加上 128
     //5) 轉換 YCbCr 到 RGB
     // printf("\nlocation = %8X\n", (unsigned int) &block);
     // printf("\nlocation2 = %8X\n", (unsigned int) &(block[5][4]));
+    // 2) 重排列 64 個矢量到 8x8 的塊中
+    printf("zigzag rearrange start!\n");
+    double tmp[8][8];
+    for (int x = 0; x < 8; x++) {
+        for (int y = 0; y < 8; y++) {
+            tmp[x][y] = block[zigzag_index[x][y]/8][zigzag_index[x][y]%8];
+        }
+    }
+    // 3) 對 8x8 的塊作 IDCT
+    //TODO: find AA&N?????
+    double s[8][8];
+    memset(s,0,sizeof(s));
+    printf("IDCT start!!!!\n");
+    for (int jj = 0; jj < 8; jj++) {
+        for (int x = 0; x < 8; x++) {
+            for (int y = 0; y < 8; y++) {
+                s[jj][x] += c (y) * tmp[x][y] * cos_cache[(jj + jj + 1) * y];
+            }
+            s[jj][x] = s[jj][x] / 2.0;
+        }
+    }
+    memset(block,0,sizeof(block));
+    for (int ii = 0; ii < 8; ii++) {
+        for (int jj = 0; jj < 8; jj++) {
+            for (int x = 0; x < 8; x++) {
+                block[ii][jj] += c(x) * s[jj][x] * cos_cache[(ii + ii + 1) * x];
+            }
+            block[ii][jj] = block[ii][jj] / 2.0;
+            printf("%g ",block[ii][jj]);
+        }
+        printf("\n");
+    }
+    printf("-----------------------------------------------\n\n");
     return &block;
 }
-
-byte chomp(double x)
-{
-    if (x > 255.0) {
-        return 255;
-    } else if (x < 0) {
-        return 0;
-    } else {
-        return (byte) x;
-    }
-}
-
 void calculate_mcu(FILE* fp)
 {
     //一個 (Hmax*8,Vmax*8) 的塊被稱作 MCU (Minimun Coded Unix) 前面例子中一個
@@ -529,52 +502,103 @@ void calculate_mcu(FILE* fp)
     // MCU 的高 = 8 * 最高垂直採樣率
     int mcu_height = 8 * f0.vmax;
     //算出有幾個MCU
-    int mcu_number_col = (f0.width - 1) / mcu_width + 1;
-    int mcu_number_row = (f0.height - 1) / mcu_height + 1;
+    int mcus_on_x = (f0.width - 1) / mcu_width + 1;
+    int mcus_on_y = (f0.height - 1) / mcu_height + 1;
     // double image[mcu_height][mcu_width];
 
-    rgb_element mcu_rgb[mcu_number_row][mcu_number_col];
-    rgb_element rgb_image[mcu_width * mcu_number_col][mcu_height * mcu_number_row];
     // double** mcu_block = (double**) malloc(8*8*sizeof(double**));
     // double** data_unit[5][mcu_width][mcu_height]; //Y Cb Cr
     //1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q
-    int block_index_i_Y = f0.frame_components[0].vertical_sample / f0.vmax,
-        block_index_j_Y = f0.frame_components[0].horizontal_sample / f0.hmax,
-        block_index_i_Cb = f0.frame_components[1].vertical_sample / f0.vmax,
-        block_index_j_Cb = f0.frame_components[1].horizontal_sample / f0.hmax,
-        block_index_i_Cr = f0.frame_components[2].vertical_sample / f0.vmax,
-        block_index_j_Cr = f0.frame_components[2].horizontal_sample / f0.hmax;
-    double data_unit[5][mcu_width][mcu_height][8][8];
+    int yV = f0.frame_components[0].vertical_sample / f0.vmax,
+        yH = f0.frame_components[0].horizontal_sample / f0.hmax,
+        CbV = f0.frame_components[1].vertical_sample / f0.vmax,
+        CbH = f0.frame_components[1].horizontal_sample / f0.hmax,
+        CrV = f0.frame_components[2].vertical_sample / f0.vmax,
+        CrH = f0.frame_components[2].horizontal_sample / f0.hmax;
+    // double data_unit[mcus_on_y][mcus_on_x][5][mcu_width][mcu_height][8][8];
+    // int (*arr)[M] = malloc(sizeof(int[N][M]));
+    // int (*arr)[M] = malloc( sizeof *arr * N );
+    // int *arr = malloc(N*M*sizeof(int));
+    // Add access it by arr[i*M + j]
+    mcu_small_block* data_unit = malloc(mcus_on_y*mcus_on_x*5*mcu_width*mcu_height*sizeof(mcu_small_block));
+
+    // double (******data_unit) = (double*******) malloc(sizeof(double******)*mcus_on_y+)
     mcu_small_block* pseudo_block;
     //MCU 的順序:由左到右，再由上到下
-    for (int i  = 0; i<mcu_number_row; i++) {
-        for (int j = 0; j<mcu_number_col; j++) {
+    for (int i  = 0; i<mcus_on_y; i++) {
+        for (int j = 0; j<mcus_on_x; j++) {
             //一個顏色分量內部各個 block 的順序:由左到右，再由上到下
             //# Cb 是一個四階陣列
             //# 前兩階描述 block 的位置，後兩階描述要擷取的是這 8*8 中的哪一個點
             //MCU[i][j].Cb = Cb[new_i / 8][new_j / 8][new_i % 8][new_j % 8]
-            for (int qt_id = 0; qt_id<f0.components_num; qt_id++)  {
+            for (int component_id = 0; component_id<f0.components_num; component_id++)  {
                 // double** mcu = (double**) malloc(f0.hmax*f0.vmax*sizeof(double**));
-                for (int a =0; a<f0.frame_components[qt_id].vertical_sample; a++) {
-                    for (int b = 0; b<f0.frame_components[qt_id].horizontal_sample; b++) {
-                        pseudo_block = calcualte_mcu_block(fp, qt_id);
+                for (int a =0; a<f0.frame_components[component_id].vertical_sample; a++) {
+                    for (int b = 0; b<f0.frame_components[component_id].horizontal_sample; b++) {
+                        pseudo_block = calcualte_mcu_block(fp, component_id);
                         for (int x = 0; x < 8; x++) {
                             for (int y = 0; y < 8; y++) {
-                                data_unit[qt_id][a][b][x][y] = (*pseudo_block)[x][y];
+                                data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                    + j*5*mcu_width*mcu_height
+                                    + component_id*mcu_width*mcu_height
+                                    + a*mcu_height
+                                    + b][x][y] =(*pseudo_block)[x][y];
+                                printf("%g |",(*pseudo_block)[x][y]);
+                                printf("%g ",data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                    + j*5*mcu_width*mcu_height
+                                    + component_id*mcu_width*mcu_height
+                                    + a*mcu_height
+                                    + b][x][y]);
                             }
+                            printf("\n");
                         }
                         // printf("\nlocation = %8X\n", (unsigned int) &(*(data_unit[qt_id][a][b])));
                         // printf("\nlocation2 = %8X\n", (unsigned int) &((*data_unit[qt_id][a][b])[5][4]));
                         // printf("\nlocation2 = %8X\n", (unsigned int) &((*test)[5][4]));
-                        for (int x = 0; x < 8; x++) {
-                            for (int y = 0; y < 8; y++) {
-                                printf("%g ",data_unit[qt_id][a][b][x][y]);
-                            }
-                            printf("\n");
-                        }
                     }
                 }
             }
+        }
+    }
+
+            // 1) 反量化 64 個矢量 : "for (i=0;i<=63;i++) vector[i]*=quant[i]" (注意防止溢出)
+            // printf("dequantize start!\n");
+            // for (int component_id = 0; component_id<f0.components_num; component_id++)  {
+            //     // double** mcu = (double**) malloc(f0.hmax*f0.vmax*sizeof(double**));
+            //     for (int a =0; a<f0.frame_components[component_id].vertical_sample; a++) {
+            //         for (int b = 0; b<f0.frame_components[component_id].horizontal_sample; b++) {
+            //             printf("use quantize table id = %d\n quantize =\n",(f0.frame_components[component_id]).qantize_table_id);
+            //             for (int quantize_i = 0; quantize_i<64; quantize_i++) {
+            //                 data_unit[component_id][a][b][quantize_i/8][quantize_i%8] *=
+            //                 quantize_table_list[(f0.frame_components[component_id]).qantize_table_id][quantize_i];
+            //             }
+            //         }
+            //     }
+            // }
+            // 2) 重排列 64 個矢量到 8x8 的塊中
+            // printf("zigzag rearrange start!\n");
+            // double tmp[8][8];
+            // for (int component_id = 0; component_id<f0.components_num; component_id++)  {
+            //     // double** mcu = (double**) malloc(f0.hmax*f0.vmax*sizeof(double**));
+            //     for (int a =0; a<f0.frame_components[component_id].vertical_sample; a++) {
+            //         for (int b = 0; b<f0.frame_components[component_id].horizontal_sample; b++) {
+            //             for (int x = 0; x < 8; x++) {
+            //                 for (int y = 0; y < 8; y++) {
+            //                     tmp[x][y] = data_unit[component_id][a][b][zigzag_index[x][y]/8][zigzag_index[x][y]%8];
+            //                 }
+            //             }
+            //             for (int x = 0; x < 8; x++) {
+            //                 for (int y = 0; y < 8; y++) {
+            //                     data_unit[component_id][a][b][x][y] = tmp[x][y];
+            //                 }
+            //             }
+            //         }
+            //     }
+            // }
+    rgb_element mcu_rgb[mcu_height][mcu_width];
+    rgb_element rgb_image[mcu_width * mcus_on_x][mcu_height * mcus_on_y];
+    for (int i  = 0; i<mcus_on_y; i++) {
+        for (int j = 0; j<mcus_on_x; j++) {
             //1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q
             //4) 將所有的 8bit 數加上 128
             //另外，由於離散餘弦變化要求定義域的對稱，所以在編碼時把RGB的數值範圍從[0，255]統一減去128偏移成[-128，127]。
@@ -606,19 +630,36 @@ void calculate_mcu(FILE* fp)
             // MCU[i][j].Cb = Cb[new_i / 8][new_j / 8][new_i % 8][new_j % 8]
 
             // # Y, Cr 的算法跟 Cb 完全相同，省略之
-            printf("????\n");
             for (int y = 0; y < mcu_height; y++) {
                 for (int x = 0; x < mcu_width; x++) {
-                    double Y = data_unit[0][y*block_index_i_Y/8][x*block_index_j_Y/8][y*block_index_i_Y%8][x*block_index_j_Y%8],
-                            Cb = data_unit[1][y*block_index_i_Cb/8][x*block_index_j_Cb/8][y*block_index_i_Cb%8][x*block_index_j_Cb%8],
-                            Cr = data_unit[2][y*block_index_i_Cr/8][x*block_index_j_Cr/8][y*block_index_i_Cr%8][x*block_index_j_Cr%8];
+                    word Y = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                    + j*5*mcu_width*mcu_height
+                                    + 0*mcu_width*mcu_height
+                                    + y*yV/8*mcu_height
+                                    + x*yH/8][y*yV%8][x*yH%8],
+                        Cb = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                    + j*5*mcu_width*mcu_height
+                                    + 1*mcu_width*mcu_height
+                                    + y*CbV/8*mcu_height
+                                    + x*CbH/8][y*CbV%8][x*CbH%8],
+                        Cr = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                    + j*5*mcu_width*mcu_height
+                                    + 2*mcu_width*mcu_height
+                                    + y*CrV/8*mcu_height
+                                    + x*CrH/8][y*CrV%8][x*CrH%8];
+                    mcu_rgb[y][x].r = Y + (word)1.402*Cr + 128;
+                    mcu_rgb[y][x].g = Y - (word)(0.34414*Cb) - (word)(0.71414*Cr) + 128;
+                    mcu_rgb[y][x].b = Y + (word)(1.772*Cb) + 128;
+                    mcu_rgb[y][x].r = mcu_rgb[y][x].r < 0 ? 0 : mcu_rgb[y][x].r;
+                    mcu_rgb[y][x].g = mcu_rgb[y][x].g < 0 ? 0 : mcu_rgb[y][x].g;
+                    mcu_rgb[y][x].b = mcu_rgb[y][x].b < 0 ? 0 : mcu_rgb[y][x].b;
 
-                    mcu_rgb[y][x].r = chomp(Y + 1.402*Cr + 128);
-                    mcu_rgb[y][x].g = chomp(Y - 0.34414*Cb - Cr + 128);
-                    mcu_rgb[y][x].b = chomp(Y + 1.772*Cb + 128);
+                    mcu_rgb[y][x].r = mcu_rgb[y][x].r > 255 ? 255 : mcu_rgb[y][x].r;
+                    mcu_rgb[y][x].g = mcu_rgb[y][x].g > 255 ? 255 : mcu_rgb[y][x].g;
+                    mcu_rgb[y][x].b = mcu_rgb[y][x].b > 255 ? 255 : mcu_rgb[y][x].b;
                 }
             }
-            // printf("max x = %d (mcu_width = %d, col = %d) max y = %d(mcu_height = %d, row = %d)\n",mcu_width * mcu_number_col,mcu_width,mcu_number_col,mcu_height * mcu_number_row,mcu_height,mcu_number_row);
+            // printf("max x = %d (mcu_width = %d, col = %d) max y = %d(mcu_height = %d, row = %d)\n",mcu_width * mcus_on_x,mcu_width,mcus_on_x,mcu_height * mcus_on_y,mcu_height,mcus_on_y);
             for (int y = i*mcu_height; y < (i+1)*mcu_height; y++) {
                 for (int x = j*mcu_width; x < (j+1)*mcu_width; x++) {
                     // printf("x = %d y = %d \n", x, y);
@@ -626,18 +667,21 @@ void calculate_mcu(FILE* fp)
                     rgb_image[x][y] = mcu_rgb[y - i*mcu_height][x - j*mcu_width];
                 }
             }
+        }
+    }
+    printf("????");
+    free(data_unit);
+    unsigned int err = loadbmp_encode_file("image.bmp", rgb_image, mcu_width * mcus_on_x, mcu_height * mcus_on_y, LOADBMP_RGB);
 
-        }
-    }
-    FILE *f = fopen("a", "w");
-    for (int i = 0 ; i< mcu_width * mcu_number_col;i++) {
-        for (int j = 0; j< mcu_height * mcu_number_row; j++) {
-            fprintf(f,"%u %u %u\n",rgb_image[i][j].r,rgb_image[i][j].g,rgb_image[i][j].b);
-        }
-    }
+    // FILE *f = fopen("a", "w");
+    // for (int i = 0 ; i< mcu_width * mcus_on_x;i++) {
+    //     for (int j = 0; j< mcu_height * mcus_on_y; j++) {
+    //         fprintf(f,"%u %u %u\n",rgb_image[i][j].r,rgb_image[i][j].g,rgb_image[i][j].b);
+    //     }
+    // }
 
     // unsigned int err = loadbmp_encode_file("image.bmp", rgb_image, f0.width, f0.height, LOADBMP_RGBA);
-    // double** mcu[mcu_number_row][mcu_number_col][3];
+    // double** mcu[mcus_on_y][mcus_on_x][3];
     // 每個 component: 3 bytes
     //  - component id (1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q)
     //  - 採樣係數 (bit 0-3 vert., 4-7 hor.)
@@ -648,7 +692,7 @@ void calculate_mcu(FILE* fp)
 int main(int argc,char* argv[])
 {
     if (argc != 2  && argc != 3) {
-        printf("[ERROR]:\nusage: ");
+        printf("[ERROR]:\nusage: ./decoder <input_file> [<output_file_name>]");
         exit(1);
     }
     FILE* fp;
