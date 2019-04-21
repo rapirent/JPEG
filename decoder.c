@@ -78,6 +78,7 @@ int quantize_table_list[4][64];//取值範圍0~3
 frame_data f0;
 huffman_table_list huffman_tables[4];
 byte component_mapping_huffman[5];
+double block[8][8];
 
 void read_qt(FILE* fp)
 {
@@ -342,7 +343,7 @@ int codeword_decode (FILE *fp, byte need_read_length)
     return decoding_code;
 }
 
-byte decode_huffman(FILE *fp, byte huffman_table_id)
+byte decode_huffman(FILE *fp, int huffman_table_id)
 {
     huffman_leaf* huffman_table = huffman_tables[huffman_table_id].start;
     int ht_node_num = huffman_tables[huffman_table_id].ht_node_num;
@@ -358,7 +359,7 @@ byte decode_huffman(FILE *fp, byte huffman_table_id)
             // printf("the huffman=%.2x(hex) len=%d \n",huffman_table[j].codeword,huffman_table[j].codeword_len);
             //i+1 = 位移幾次 + 1 = 有幾位
             if(huffman_table[j].codeword==codeword&&huffman_table[j].codeword_len==(i+1)) {
-                printf("find codeword= %.2x (len = %d) in huffman tree\n",codeword,i+1);
+                // printf("find codeword= %.2x (len = %d) in huffman tree\n",codeword,i+1);
                 return huffman_table[j].value;
             }
         }
@@ -374,7 +375,7 @@ double c(int i)
         return 1.0;
     }
 }
-mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
+void calcualte_mcu_block(FILE *fp, byte component_id)
 {
 // void calcualte_mcu_block(FILE *fp,byte component_id) {
     //https://github.com/MROS/jpeg_tutorial/blob/master/doc/%E8%B7%9F%E6%88%91%E5%AF%ABjpeg%E8%A7%A3%E7%A2%BC%E5%99%A8%EF%BC%88%E5%9B%9B%EF%BC%89%E8%AE%80%E5%8F%96%E5%A3%93%E7%B8%AE%E5%9C%96%E5%83%8F%E6%95%B8%E6%93%9A.md
@@ -389,12 +390,11 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
     // 0000 0000 | 0000 0001 | 0001 0000 | 0001 0001
     //在整個圖片解碼的開始, 你需要先初始化 DC 值為 0.
     static int dc_block[5] = {0,0,0,0,0};
-    static double block[8][8];
     memset(block,0,sizeof(block));
     //DC在高位，必須轉為0x00或0x01
     printf("pickup DC table %.2x\n",
            (component_mapping_huffman[component_id] >> 4)&0x0f);
-    byte dc_table_id = huffman_table_index((component_mapping_huffman[component_id]>> 4)&0x0f);
+    int dc_table_id = huffman_table_index((component_mapping_huffman[component_id]>> 4)&0x0f);
     //從此顏色份量單元數據流的起點開始一位一位的讀入，直到讀入的編碼與該份量直流哈夫曼樹的某個碼字（葉子結點）一致，
     //然後用直流哈夫曼樹查得該碼字對應的權值。
     //權值（共8位）表示該直流份量數值的二進制位數，也就是接下來需要讀入的位數
@@ -442,6 +442,13 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
             i++;
         }
     }
+    for (int x = 0; x < 8; x++) {
+        for (int y = 0; y < 8; y++) {
+            printf("%g ",block[x][y]);
+        }
+        printf("\n");
+    }
+    printf("\n");
     // 1) 反量化 64 個矢量 : "for (i=0;i<=63;i++) vector[i]*=quant[i]" (注意防止溢出)
     printf("dequantize start!\n");
     printf("use quantize table id = %d\n quantize =\n",(f0.frame_components[component_id]).qantize_table_id);
@@ -486,7 +493,6 @@ mcu_small_block* calcualte_mcu_block(FILE *fp, byte component_id)
         printf("\n");
     }
     printf("-----------------------------------------------\n\n");
-    return &block;
 }
 void calculate_mcu(FILE* fp)
 {
@@ -523,7 +529,6 @@ void calculate_mcu(FILE* fp)
     mcu_small_block* data_unit = malloc(mcus_on_y*mcus_on_x*5*mcu_width*mcu_height*sizeof(mcu_small_block));
 
     // double (******data_unit) = (double*******) malloc(sizeof(double******)*mcus_on_y+)
-    mcu_small_block* pseudo_block;
     //MCU 的順序:由左到右，再由上到下
     for (int i  = 0; i<mcus_on_y; i++) {
         for (int j = 0; j<mcus_on_x; j++) {
@@ -535,15 +540,15 @@ void calculate_mcu(FILE* fp)
                 // double** mcu = (double**) malloc(f0.hmax*f0.vmax*sizeof(double**));
                 for (int a =0; a<f0.frame_components[component_id].vertical_sample; a++) {
                     for (int b = 0; b<f0.frame_components[component_id].horizontal_sample; b++) {
-                        pseudo_block = calcualte_mcu_block(fp, component_id);
+                        calcualte_mcu_block(fp, component_id);
                         for (int x = 0; x < 8; x++) {
                             for (int y = 0; y < 8; y++) {
                                 data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + component_id*mcu_width*mcu_height
                                     + a*mcu_height
-                                    + b][x][y] =(*pseudo_block)[x][y];
-                                printf("%g |",(*pseudo_block)[x][y]);
+                                    + b][x][y] = block[x][y];
+                                // printf("%g |",(*pseudo_block)[x][y]);
                                 printf("%g ",data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + component_id*mcu_width*mcu_height
@@ -635,18 +640,18 @@ void calculate_mcu(FILE* fp)
                     word Y = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + 0*mcu_width*mcu_height
-                                    + y*yV/8*mcu_height
-                                    + x*yH/8][y*yV%8][x*yH%8],
-                        Cb = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                    + ((y*yV)/8)*mcu_height
+                                    + x*yH/8][(y*yV)%8][(x*yH)%8],
+                         Cb = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + 1*mcu_width*mcu_height
-                                    + y*CbV/8*mcu_height
-                                    + x*CbH/8][y*CbV%8][x*CbH%8],
-                        Cr = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                    + ((y*CbV)/8)*mcu_height
+                                    + x*CbH/8][(y*CbV)%8][(x*CbH)%8],
+                         Cr = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + 2*mcu_width*mcu_height
-                                    + y*CrV/8*mcu_height
-                                    + x*CrH/8][y*CrV%8][x*CrH%8];
+                                    + ((y*CrV)/8)*mcu_height
+                                    + x*CrH/8][(y*CrV)%8][(x*CrH)%8];
                     mcu_rgb[y][x].r = Y + (word)1.402*Cr + 128;
                     mcu_rgb[y][x].g = Y - (word)(0.34414*Cb) - (word)(0.71414*Cr) + 128;
                     mcu_rgb[y][x].b = Y + (word)(1.772*Cb) + 128;
@@ -669,7 +674,6 @@ void calculate_mcu(FILE* fp)
             }
         }
     }
-    printf("????");
     free(data_unit);
     unsigned int err = loadbmp_encode_file("image.bmp", rgb_image, mcu_width * mcus_on_x, mcu_height * mcus_on_y, LOADBMP_RGB);
 
