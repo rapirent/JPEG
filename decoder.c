@@ -7,8 +7,6 @@
 #include <math.h>
 #include <string.h>
 #include "util.h"
-// #define LOADBMP_IMPLEMENTATION
-// #include "./LoadBMP/loadbmp.h"
 #include "bitmap_image.hpp"
 
 typedef struct {
@@ -68,13 +66,6 @@ void init_cos_cache()
     }
 }
 
-// 查阅标记SOF0，可以得到图像不同颜色分量的采样因子，
-// 即Y、Cr、Cb三个分量各自的水平采样因子和垂直采样因子。
-// 大多图片的采样因子为4：1：1或1：1：1。
-// 其中，4：1：1即（2*2）：（1*1）：（1*1））；1：1：1即（1*1）：（1*1）：（1*1）。
-// 记三个分量中水平采样因子最大值为Hmax，垂直采样因子最大值为Vmax，
-// 那么单个MCU矩阵的宽就是Hmax*8像素，高就是Vmax*8像素。
-
 int quantize_table_list[4][64];//取值範圍0~3
 frame_data f0;
 huffman_table_list huffman_tables[4];
@@ -91,7 +82,6 @@ void read_qt(FILE* fp)
     byte c;
     word tmp;
     while (len > 0) {
-        // fscanf(fp,"%"SCNd8,&id_prec);
         fread(&id_prec,1,1,fp);
         len-=1;
         //       - QT 信息 (1 byte):
@@ -128,7 +118,6 @@ void read_frame(FILE *fp)
     printf("section length = %x (hex) %u (dec)\n",len,len);
 
     //   - 数据精度 (1 byte) 每个样本位数, 通常是 8 (大多数软件不支持 12 和 16)
-    // fscanf(fp,"%"SCNd8,&f0.precision);
     fread(&(f0.precision),1,1,fp);
     printf("precision is %d(dec) \n",f0.precision);
     // Number of lines – Specifies the maximum number of lines in the source image.
@@ -139,7 +128,6 @@ void read_frame(FILE *fp)
     f0.width = read_word_to_bigendian(fp);
     printf("image height %d(dec), image widht %d(dec)\n",f0.height,f0.width);
     //   - components 数量(1 byte), 灰度图是 1, YCbCr/YIQ 彩色图是 3, CMYK 彩色图是 4
-    // fscanf(fp,"%"SCNd8,&f0.components_num);
     fread(&(f0.components_num),1,1,fp);
     printf("# of image components is %d (dec)\n",f0.components_num);
 
@@ -150,12 +138,10 @@ void read_frame(FILE *fp)
     for (int i = 0; i < f0.components_num; i++) {
         //   - 每个 component: 3 bytes
         //      - component id (1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q)
-        // fscanf(fp,"%"SCNd8,&component_id);
         fread(&component_id,1,1,fp);
         printf("------------\nnow is reading component whose id=%d(dec)\n",
                component_id);
         //      - 采样系数 (bit 0-3 vert., 4-7 hor.)
-        // fscanf(fp,"%"SCNd8,&sample);
         fread(&sample,1,1,fp);
         // 先Horizontal sampling factor 再Vertical sampling factor
         (f0.frame_components[component_id-1]).horizontal_sample = (sample >> 4) & 0x0f;
@@ -173,7 +159,6 @@ void read_frame(FILE *fp)
             f0.vmax = (f0.frame_components[component_id-1]).vertical_sample;
         }
         //Quantization table destination selector
-        // fscanf(fp,"%"SCNd8,&((f0.frame_components[component_id-1]).qantize_table_id));
         fread(&((f0.frame_components[component_id-1]).qantize_table_id),1,1,fp);
         printf("qt destination = %d\n",
                (f0.frame_components[component_id-1]).qantize_table_id);
@@ -191,7 +176,6 @@ void read_ht(FILE* fp)
     byte class_id;
     byte ht_value;
     while (len > 0) {
-        // fscanf(fp,"%"SCNd8,&class_id);
         fread(&class_id,1,1,fp);
         len--;
         //      bit 0..3: HT 號 (0..3, 否則錯誤)
@@ -206,11 +190,6 @@ void read_ht(FILE* fp)
         //這16個數值實際意義為：沒有1位和4位的哈夫曼碼字；2位和3位的碼字各有2個；5位碼字有5個；6位和8位碼字各有1個；7位碼字各有6個；沒有9位或以上的碼字。
         ht_node_num = 0;
         for(int i = 0; i<16; i++) {
-            //huffman tree height = codeword length
-            // if(fscanf(fp,"%"SCNd8,&huffman_length[i])!=1) {
-            //     printf("read HT height info error");
-            //     exit(1);
-            // }
             fread(&(ht_length),1,1,fp);
             huffman_length[i] = ht_length;
             len--;
@@ -233,7 +212,6 @@ void read_ht(FILE* fp)
             printf("reading the %d bits length codeword (%.3d total)\n", height+1,
                    huffman_length[height]);
             for(int j = 0; j<huffman_length[height]; j++) {
-                // fscanf(fp,"%"SCNd8,&(ht_leaf[leaf_index].content));
 
                 fread(&(ht_value),1,1,fp);
                 len--;
@@ -266,7 +244,6 @@ void read_sos(FILE* fp)
     printf("section length = %x (hex) %u (dec)\n",len,len);
     //   - 掃瞄行內組件的數量 (1 byte), 必須 >= 1 , <=4 (否則是錯的) 通常是 3
     byte component_num;
-    // fscanf(fp,"%"SCNd8,&component_num);
     fread(&component_num,1,1,fp);
     printf(" Number of img components = %d (dec)\n",component_num);
     assert(len == 6+2*component_num);
@@ -277,12 +254,11 @@ void read_sos(FILE* fp)
     byte component_id,destination;
     for (int i =0; i<component_num; i++) {
 
-        // fscanf(fp,"%"SCNd8,&component_id);
         fread(&component_id,1,1,fp);
-        // fscanf(fp,"%"SCNd8,&component_mapping_huffman[component_id]);
         fread(&destination,1,1,fp);
         len = len-2;
-        printf("# %d component select %.2x (DC) and %.2x(AC)  destination\n",component_id,destination>>4,(destination&0x0f)|0x10);
+        printf("# %d component select %.2x (DC) and %.2x(AC)  destination\n",component_id,destination>>4,
+               (destination&0x0f)|0x10);
         component_mapping_huffman[component_id-1] = destination;
     }
     //   - 忽略 3 bytes (???)
@@ -301,7 +277,6 @@ byte read_one_bit(FILE *fp)
     byte check_ff00;
     //每八一次
     if (!count) {
-        // fscanf(fp,"%"SCNd8,&buffer);
         fread(&buffer,1,1,fp);
         // printf("-------\nread this buffer=%.2x\n",buffer);
         //https://www.jianshu.com/p/ccb52e9cd2e4
@@ -312,7 +287,6 @@ byte read_one_bit(FILE *fp)
         //在讀取文件信息的時候，如果遇0XFF00，就必須去除後面的00；即，將0XFF00當做0XFF；
         if (buffer == 0xff) {
             byte check_ff00;
-            // fscanf(fp,"%"SCNd8,&check_ff00);
             fread(&check_ff00,1,1,fp);
             if (check_ff00 != 0x00) {
                 printf("missing 0xff00 sequence!");
@@ -460,7 +434,7 @@ void calcualte_mcu_block(FILE *fp, byte component_id)
     printf("use quantize table id = %d\n quantize =\n",(f0.frame_components[component_id]).qantize_table_id);
     for (int quantize_i = 0; quantize_i<64; quantize_i++) {
         block[quantize_i/8][quantize_i%8] *=
-        quantize_table_list[(f0.frame_components[component_id]).qantize_table_id][quantize_i];
+            quantize_table_list[(f0.frame_components[component_id]).qantize_table_id][quantize_i];
     }
     //4) 將所有的 8bit 數加上 128
     //5) 轉換 YCbCr 到 RGB
@@ -495,11 +469,8 @@ void calcualte_mcu_block(FILE *fp, byte component_id)
             }
             block[ii][jj] = block[ii][jj] / 2.0;
             block[ii][jj] += 128.0;
-            // printf("%g ",block[ii][jj]);
         }
-        // printf("\n");
     }
-    // printf("-----------------------------------------------\n\n");
 }
 void calculate_mcu(FILE* fp)
 {
@@ -517,25 +488,14 @@ void calculate_mcu(FILE* fp)
     //算出有幾個MCU
     int mcus_on_x = (f0.width - 1) / mcu_width + 1;
     int mcus_on_y = (f0.height - 1) / mcu_height + 1;
-    // double image[mcu_height][mcu_width];
-
-    // double** mcu_block = (double**) malloc(8*8*sizeof(double**));
-    // double** data_unit[5][mcu_width][mcu_height]; //Y Cb Cr
-    //1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q
-    // double data_unit[mcus_on_y][mcus_on_x][5][mcu_width][mcu_height][8][8];
-    // int (*arr)[M] = malloc(sizeof(int[N][M]));
-    // int (*arr)[M] = malloc( sizeof *arr * N );
-    // int *arr = malloc(N*M*sizeof(int));
     // Add access it by arr[i*M + j]
-    mcu_small_block* data_unit = (mcu_small_block*) malloc(mcus_on_y*mcus_on_x*5*mcu_width*mcu_height*sizeof(mcu_small_block));
+    mcu_small_block* data_unit = (mcu_small_block*) malloc(mcus_on_y*mcus_on_x*5*mcu_width*mcu_height*sizeof(
+                                     mcu_small_block));
 
     // double (******data_unit) = (double*******) malloc(sizeof(double******)*mcus_on_y+)
     //MCU 的順序:由左到右，再由上到下
     for (int i  = 0; i<mcus_on_y; i++) {
         for (int j = 0; j<mcus_on_x; j++) {
-            //一個顏色分量內部各個 block 的順序:由左到右，再由上到下
-            //# Cb 是一個四階陣列
-            //# 前兩階描述 block 的位置，後兩階描述要擷取的是這 8*8 中的哪一個點
             //MCU[i][j].Cb = Cb[new_i / 8][new_j / 8][new_i % 8][new_j % 8]
             for (int component_id = 0; component_id<f0.components_num; component_id++)  {
                 // double** mcu = (double**) malloc(f0.hmax*f0.vmax*sizeof(double**));
@@ -545,10 +505,10 @@ void calculate_mcu(FILE* fp)
                         for (int x = 0; x < 8; x++) {
                             for (int y = 0; y < 8; y++) {
                                 data_unit[i*mcus_on_x*5*mcu_width*mcu_height
-                                    + j*5*mcu_width*mcu_height
-                                    + component_id*mcu_width*mcu_height
-                                    + a*mcu_height
-                                    + b][x][y] = block[x][y];
+                                          + j*5*mcu_width*mcu_height
+                                          + component_id*mcu_width*mcu_height
+                                          + a*mcu_height
+                                          + b][x][y] = block[x][y];
                             }
                         }
                     }
@@ -564,78 +524,42 @@ void calculate_mcu(FILE* fp)
         cbH =f0.hmax/ f0.frame_components[1].horizontal_sample,
         crV = f0.vmax/f0.frame_components[2].vertical_sample,
         crH =f0.hmax/ f0.frame_components[2].horizontal_sample;
-    printf("fuck!!\n");
     for (int i  = 0; i<mcus_on_y; i++) {
         for (int j = 0; j<mcus_on_x; j++) {
             //1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q
-            //4) 將所有的 8bit 數加上 128
-            //另外，由於離散餘弦變化要求定義域的對稱，所以在編碼時把RGB的數值範圍從[0，255]統一減去128偏移成[-128，127]。
-            //因此解碼時必須為每個份量加上128。具體公式如下：
-            // R=Y                       +1.402*Cb     +128;
-            // G=Y-0.34414*Cr    -0.71414*Cb   +128;
-            // B=Y                       +1.772*Cb     +128;
-            //5) 轉換 YCbCr 到 RGB
-            //雖然我們在本章還不用知道這個問題的答案，但是看到每個分量的大小不同，很自然就會產生這個疑問吧？
-            // 所有採樣率都爲 1 的時候，MCU 跟各個顏色分量都是 8 * 8 的正方形，直接一一對應即可。
-            // 但是在第一張圖中的例子，MCU 有 16 * 16 ，Cb, Cr 都只有 8 * 8 ，那要如何對應呢？
-            // 按照採樣率來對應，例如下圖， Cb, Cr 的最左上角對應到了 MCU 的左上四個 px ：
-            // 用虛擬碼表示會更清晰：
-            // # 欲計算 MCU[i][j].Cb ，也就是 MCU 的第 i, j 個像素的 Cb 分量數值。
-
-            // # Cb 儲存 Cb 顏色分量的數值
-            // # horizontal sampling（水平採樣率） 縮寫爲 hs
-            // # vertical sampling（垂直採樣率） 縮寫爲 vs
-            // max_hs  = max(Y.hs, Cb.hs, Cr.hs)
-            // max_vs = max(Y.vs, Cb.vs, Cr.vs)
-
-            // # 計算 i, j 縮小到 Cb 的大小時，應該索引爲多少
-            // # 注意此處的除號 "/" 都會捨去到整數
-            // new_i = i * Cb.hs / max_hs
-            // new_j = j * Cb.vs / max_vs
-
-            // # Cb 是一個四階陣列
-            // # 前兩階描述 block 的位置，後兩階描述要擷取的是這 8*8 中的哪一個點
-            // MCU[i][j].Cb = Cb[new_i / 8][new_j / 8][new_i % 8][new_j % 8]
-
-            // # Y, Cr 的算法跟 Cb 完全相同，省略之
-            // printf("max x = %d (mcu_width = %d, col = %d) max y = %d(mcu_height = %d, row = %d)\n",mcu_width * mcus_on_x,mcu_width,mcus_on_x,mcu_height * mcus_on_y,mcu_height,mcus_on_y);
             for (int a = 0; a < mcu_height; a++) {
                 for (int b = 0; b < mcu_width; b++) {
                     double Y = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
-                                    + j*5*mcu_width*mcu_height
-                                    + 0*mcu_width*mcu_height
-                                    + (a/(8*yV))*mcu_height
-                                    + (b/(8*yH))][(a % (8*yV)) /yV][(b % (8*yH)) /yH],
-                        Cb = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
-                                    + j*5*mcu_width*mcu_height
-                                    + 1*mcu_width*mcu_height
-                                    + (a/(8*cbV))*mcu_height
-                                    + b/(8*cbH)][(a % (8*cbV)) /cbV][(b % (8*cbH)) /cbH],
-                        Cr = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
-                                    + j*5*mcu_width*mcu_height
-                                    + 2*mcu_width*mcu_height
-                                    + (a/(8*crV))*mcu_height
-                                    + b/(8*crH)][(a % (8*crV)) /crV][(b % (8*crH)) /crH];
+                                         + j*5*mcu_width*mcu_height
+                                         + 0*mcu_width*mcu_height
+                                         + (a/(8*yV))*mcu_height
+                                         + (b/(8*yH))][(a % (8*yV)) /yV][(b % (8*yH)) /yH],
+                               Cb = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                              + j*5*mcu_width*mcu_height
+                                              + 1*mcu_width*mcu_height
+                                              + (a/(8*cbV))*mcu_height
+                                              + b/(8*cbH)][(a % (8*cbV)) /cbV][(b % (8*cbH)) /cbH],
+                                    Cr = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                                   + j*5*mcu_width*mcu_height
+                                                   + 2*mcu_width*mcu_height
+                                                   + (a/(8*crV))*mcu_height
+                                                   + b/(8*crH)][(a % (8*crV)) /crV][(b % (8*crH)) /crH];
                     double R = Y + 1.402*(Cr - 128),
-                        G = Y - 0.34414*(Cb - 128) - 0.71414*(Cr -  128),
-                        B = Y + 1.772*(Cb - 128);
+                           G = Y - 0.34414*(Cb - 128) - 0.71414*(Cr -  128),
+                           B = Y + 1.772*(Cb - 128);
+                    //5) 轉換 YCbCr 到 RGB
                     mcu_rgb[i*mcus_on_x + j][a][b].r = (byte)(R > 255.0 ? 255.0 : (R < 0.0 ? 0.0 : R));
                     mcu_rgb[i*mcus_on_x + j][a][b].g = (byte)(G > 255.0 ? 255.0 : (G < 0.0 ? 0.0 : G));
                     mcu_rgb[i*mcus_on_x + j][a][b].b = (byte)(B > 255.0 ? 255.0 : (B < 0.0 ? 0.0 : B));
-
-                    printf("y=%g\n",(double)mcu_rgb[i*mcus_on_x + j][a][b].r);
-                    printf("cb=%g\n",(double)mcu_rgb[i*mcus_on_x + j][a][b].g);
-                    printf("cr=%g\n\n",(double)mcu_rgb[i*mcus_on_x + j][a][b].b);
                 }
             }
         }
     }
-    printf("???%d,%d\n",f0.height,f0.width);
     free(data_unit);
     bitmap_image outimg(f0.width,f0.height);
 
-    for (unsigned int y = 0; y < f0.height; y++) {
-        for (unsigned int x = 0; x < f0.width; x++) {
+    for (int y = 0; y < f0.height; y++) {
+        for (int x = 0; x < f0.width; x++) {
             outimg.set_pixel(x,y,mcu_rgb[y/mcu_height * mcus_on_x + x/mcu_width][y%mcu_height][x%mcu_width].r
                              ,mcu_rgb[y/mcu_height * mcus_on_x + x/mcu_width][y%mcu_height][x%mcu_width].g
                              ,mcu_rgb[y/mcu_height * mcus_on_x + x/mcu_width][y%mcu_height][x%mcu_width].b);
@@ -659,7 +583,6 @@ int main(int argc,char* argv[])
     byte l;
     bool b_SOI = false;
     bool b_EOI = false;
-    double*** mcu;
     init_cos_cache();
     while (fread(&h,1, 1,fp)) {
         fread(&l,1, 1,fp);
@@ -668,9 +591,6 @@ int main(int argc,char* argv[])
                 b_SOI = true;
             }
             assert(b_SOI == true);
-            // if (c.lowwer_byte >= APP0 && c.lowwer_byte <= APP15) {
-            //     continue;
-            // }
             switch(l) {
             case DQT:
                 printf("\nread DQT\n");
@@ -709,11 +629,11 @@ int main(int argc,char* argv[])
                 break;
             case EOI:
                 printf("End of Image\n");
-                // b_EOI = true;
+                b_EOI = true;
                 break;
             }
         }
     }
-    // assert(b_EOI==true);
+    assert(b_EOI==true);
     return 0;
 }
