@@ -616,7 +616,7 @@ void calculate_mcu(FILE* fp)
                                     + 2*mcu_width*mcu_height
                                     + (a/(8*crV))*mcu_height
                                     + b/(8*crH)][(a % (8*crV)) /crV][(b % (8*crH)) /crH];
-                    byte R = Y + 1.402*(Cr - 128),
+                    double R = Y + 1.402*(Cr - 128),
                         G = Y - 0.34414*(Cb - 128) - 0.71414*(Cr -  128),
                         B = Y + 1.772*(Cb - 128);
                     mcu_rgb[i*mcus_on_x + j][a][b].r = (byte)(R > 255.0 ? 255.0 : (R < 0.0 ? 0.0 : R));
