@@ -7,8 +7,9 @@
 #include <math.h>
 #include <string.h>
 #include "util.h"
-#define LOADBMP_IMPLEMENTATION
-#include "./LoadBMP/loadbmp.h"
+// #define LOADBMP_IMPLEMENTATION
+// #include "./LoadBMP/loadbmp.h"
+#include "bitmap_image.hpp"
 
 typedef struct {
     byte horizontal_sample;
@@ -525,7 +526,7 @@ void calculate_mcu(FILE* fp)
     // int (*arr)[M] = malloc( sizeof *arr * N );
     // int *arr = malloc(N*M*sizeof(int));
     // Add access it by arr[i*M + j]
-    mcu_small_block* data_unit = malloc(mcus_on_y*mcus_on_x*5*mcu_width*mcu_height*sizeof(mcu_small_block));
+    mcu_small_block* data_unit = (mcu_small_block*) malloc(mcus_on_y*mcus_on_x*5*mcu_width*mcu_height*sizeof(mcu_small_block));
 
     // double (******data_unit) = (double*******) malloc(sizeof(double******)*mcus_on_y+)
     //MCU 的順序:由左到右，再由上到下
@@ -557,38 +558,37 @@ void calculate_mcu(FILE* fp)
             }
         }
     }
-    printf("fuck!!!\n");
-    for (int i  = 0; i<mcus_on_y; i++) {
-        for (int j = 0; j<mcus_on_x; j++) {
-            //一個顏色分量內部各個 block 的順序:由左到右，再由上到下
-            //# Cb 是一個四階陣列
-            //# 前兩階描述 block 的位置，後兩階描述要擷取的是這 8*8 中的哪一個點
-            //MCU[i][j].Cb = Cb[new_i / 8][new_j / 8][new_i % 8][new_j % 8]
-            for (int component_id = 0; component_id<f0.components_num; component_id++)  {
-                // double** mcu = (double**) malloc(f0.hmax*f0.vmax*sizeof(double**));
-                for (int a =0; a<f0.frame_components[component_id].vertical_sample; a++) {
-                    for (int b = 0; b<f0.frame_components[component_id].horizontal_sample; b++) {
-                        printf("now id = %d\n",component_id);
-                        for (int x = 0; x < 8; x++) {
-                            for (int y = 0; y < 8; y++) {
-                                // printf("%g |",(*pseudo_block)[x][y]);
-                                printf("%g ",data_unit[i*mcus_on_x*5*mcu_width*mcu_height
-                                    + j*5*mcu_width*mcu_height
-                                    + component_id*mcu_width*mcu_height
-                                    + a*mcu_height
-                                    + b][x][y]);
-                            }
-                            printf("\n");
-                        }
-                        // printf("\nlocation = %8X\n", (unsigned int) &(*(data_unit[qt_id][a][b])));
-                        // printf("\nlocation2 = %8X\n", (unsigned int) &((*data_unit[qt_id][a][b])[5][4]));
-                        // printf("\nlocation2 = %8X\n", (unsigned int) &((*test)[5][4]));
-                        printf("-----------------------------------------------\n\n");
-                    }
-                }
-            }
-        }
-    }
+    // for (int i  = 0; i<mcus_on_y; i++) {
+    //     for (int j = 0; j<mcus_on_x; j++) {
+    //         //一個顏色分量內部各個 block 的順序:由左到右，再由上到下
+    //         //# Cb 是一個四階陣列
+    //         //# 前兩階描述 block 的位置，後兩階描述要擷取的是這 8*8 中的哪一個點
+    //         //MCU[i][j].Cb = Cb[new_i / 8][new_j / 8][new_i % 8][new_j % 8]
+    //         for (int component_id = 0; component_id<f0.components_num; component_id++)  {
+    //             // double** mcu = (double**) malloc(f0.hmax*f0.vmax*sizeof(double**));
+    //             for (int a =0; a<f0.frame_components[component_id].vertical_sample; a++) {
+    //                 for (int b = 0; b<f0.frame_components[component_id].horizontal_sample; b++) {
+    //                     printf("now id = %d\n",component_id);
+    //                     for (int x = 0; x < 8; x++) {
+    //                         for (int y = 0; y < 8; y++) {
+    //                             // printf("%g |",(*pseudo_block)[x][y]);
+    //                             printf("%g ",data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+    //                                 + j*5*mcu_width*mcu_height
+    //                                 + component_id*mcu_width*mcu_height
+    //                                 + a*mcu_height
+    //                                 + b][x][y]);
+    //                         }
+    //                         printf("\n");
+    //                     }
+    //                     // printf("\nlocation = %8X\n", (unsigned int) &(*(data_unit[qt_id][a][b])));
+    //                     // printf("\nlocation2 = %8X\n", (unsigned int) &((*data_unit[qt_id][a][b])[5][4]));
+    //                     // printf("\nlocation2 = %8X\n", (unsigned int) &((*test)[5][4]));
+    //                     printf("-----------------------------------------------\n\n");
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
             // 1) 反量化 64 個矢量 : "for (i=0;i<=63;i++) vector[i]*=quant[i]" (注意防止溢出)
             // printf("dequantize start!\n");
@@ -624,14 +624,14 @@ void calculate_mcu(FILE* fp)
             //         }
             //     }
             // }
-    rgb_element mcu_rgb[mcu_height][mcu_width];
-    rgb_element rgb_image[mcu_width * mcus_on_x][mcu_height * mcus_on_y];
-    int YV = f0.frame_components[0].vertical_sample / f0.vmax,
-        YH = f0.frame_components[0].horizontal_sample / f0.hmax,
-        CbV = f0.frame_components[1].vertical_sample / f0.vmax,
-        CbH = f0.frame_components[1].horizontal_sample / f0.hmax,
-        CrV = f0.frame_components[2].vertical_sample / f0.vmax,
-        CrH = f0.frame_components[2].horizontal_sample / f0.hmax;
+    rgb_element mcu_rgb[mcus_on_x*mcus_on_y][mcu_height][mcu_width];
+    rgb_element rgb_image[f0.width][f0.height];
+    int yV = f0.vmax/f0.frame_components[0].vertical_sample,
+        yH = f0.hmax/f0.frame_components[0].horizontal_sample,
+        cbV = f0.vmax/f0.frame_components[1].vertical_sample,
+        cbH =f0.hmax/ f0.frame_components[1].horizontal_sample,
+        crV = f0.vmax/f0.frame_components[2].vertical_sample,
+        crH =f0.hmax/ f0.frame_components[2].horizontal_sample;
     for (int i  = 0; i<mcus_on_y; i++) {
         for (int j = 0; j<mcus_on_x; j++) {
             //1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q
@@ -666,46 +666,57 @@ void calculate_mcu(FILE* fp)
 
             // # Y, Cr 的算法跟 Cb 完全相同，省略之
             // printf("max x = %d (mcu_width = %d, col = %d) max y = %d(mcu_height = %d, row = %d)\n",mcu_width * mcus_on_x,mcu_width,mcus_on_x,mcu_height * mcus_on_y,mcu_height,mcus_on_y);
-            for (int mcu_y = 0; mcu_y < mcu_height; mcu_y++) {
-                for (int mcu_x = 0; mcu_x < mcu_width; mcu_x++) {
+            for (int a = 0; a < mcu_height; a++) {
+                for (int b = 0; b < mcu_width; b++) {
                     double Y = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + 0*mcu_width*mcu_height
-                                    + ((mcu_y*YH)/8)*mcu_height
-                                    + mcu_x*YV/8][(mcu_y*YH)%8][(mcu_x*YV)%8],
+                                    + (a/(8*yV))*mcu_height
+                                    + (b/(8*yH))][(a % (8*yV)) /yV][(b % (8*yH)) /yH],
                         Cb = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + 1*mcu_width*mcu_height
-                                    + ((mcu_y*CbH)/8)*mcu_height
-                                    + mcu_x*CbV/8][(mcu_y*CbH)%8][(mcu_x*CbV)%8],
+                                    + (a/(8*cbV))*mcu_height
+                                    + b/(8*cbH)][(a % (8*cbV)) /cbV][(b % (8*cbH)) /cbH],
                         Cr = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + 2*mcu_width*mcu_height
-                                    + ((mcu_y*CrH)/8)*mcu_height
-                                    + mcu_x*CrV/8][(mcu_y*CrH)%8][(mcu_x*CrV)%8];
-                    double r = Y + 1.402*Cr + 128,
-                        g = Y - (0.34414*Cb) - (0.71414*Cr) + 128,
-                        b = Y + (1.772*Cb) + 128;
-                    mcu_rgb[mcu_y][mcu_x].r = (byte)(r < 0 ? 0 : r);
-                    mcu_rgb[mcu_y][mcu_x].g = (byte)(g < 0 ? 0 : g);
-                    mcu_rgb[mcu_y][mcu_x].b = (byte)(b < 0 ? 0 : b);
+                                    + (a/(8*crV))*mcu_height
+                                    + b/(8*crH)][(a % (8*crV)) /crV][(b % (8*crH)) /crH];
+                    double R = Y + 1.402*Cr + 128,
+                        G = Y - (0.34414*Cb) - (0.71414*Cr) + 128,
+                        B = Y + (1.772*Cb) + 128;
+                    mcu_rgb[i*mcus_on_x + j][a][b].r = R < 0 ? (byte)0 : (byte)R;
+                    mcu_rgb[i*mcus_on_x + j][a][b].g = G < 0 ? (byte)0 : (byte)G;
+                    mcu_rgb[i*mcus_on_x + j][a][b].b = B < 0 ? (byte)0 : (byte)B;
 
-                    mcu_rgb[mcu_y][mcu_x].r = (byte)(r > 255 ? 255 : r);
-                    mcu_rgb[mcu_y][mcu_x].g = (byte)(g > 255 ? 255 : g);
-                    mcu_rgb[mcu_y][mcu_x].b = (byte)(b > 255 ? 255 : b);
-                }
-            }
-            for (int y = i*mcu_height; y < (i+1)*mcu_height; y++) {
-                for (int x = j*mcu_width; x < (j+1)*mcu_width; x++) {
-                    // printf("x = %d y = %d \n", x, y);
-                    // printf("test: %u",rgb_image[x][y].r);
-                    rgb_image[x][y] = mcu_rgb[y - i*mcu_height][x - j*mcu_width];
+                    mcu_rgb[i*mcus_on_x + j][a][b].r = R > 255 ? (byte)255 : (byte)R;
+                    mcu_rgb[i*mcus_on_x + j][a][b].g = G > 255 ? (byte)255 : (byte)G;
+                    mcu_rgb[i*mcus_on_x + j][a][b].b = B > 255 ? (byte)255 : (byte)B;
                 }
             }
         }
     }
+    // for (int y = 0; y < f0.height; y++) {
+    //     for (int x = 0; x < f0.width; x++) {
+    //         // printf("x = %d y = %d \n", x, y);
+    //         // printf("test: %u",rgb_image[x][y].r);
+    //         rgb_image[y][x] = mcu_rgb[y/mcu_height * mcus_on_x + x/mcu_width][y%mcu_height][x%mcu_width];
+    //     }
+    // }
+    printf("???%d,%d\n",f0.height,f0.width);
     free(data_unit);
-    unsigned int err = loadbmp_encode_file("image.bmp", rgb_image, mcu_width * mcus_on_x, mcu_height * mcus_on_y, LOADBMP_RGB);
+    bitmap_image outimg(f0.width,f0.height);
+
+    for (unsigned int y = 0; y < f0.height; y++) {
+        for (unsigned int x = 0; x < f0.width; x++) {
+            outimg.set_pixel(x,y,mcu_rgb[y/mcu_height * mcus_on_x + x/mcu_width][y%mcu_height][x%mcu_width].r
+                             ,mcu_rgb[y/mcu_height * mcus_on_x + x/mcu_width][y%mcu_height][x%mcu_width].g
+                             ,mcu_rgb[y/mcu_height * mcus_on_x + x/mcu_width][y%mcu_height][x%mcu_width].b);
+        }
+    }
+    outimg.save_image("image.bmp");
+    // unsigned int err = loadbmp_encode_file("image.bmp", rgb_image, f0.width, f0.height, LOADBMP_RGB);
 
     // FILE *f = fopen("a", "w");
     // for (int i = 0 ; i< mcu_width * mcus_on_x;i++) {
@@ -741,7 +752,6 @@ int main(int argc,char* argv[])
     double*** mcu;
     init_cos_cache();
     while (fread(&h,1, 1,fp)) {
-        // printf("fuck");
         fread(&l,1, 1,fp);
         if (h == 0xff) {
             if (!b_SOI && l == SOI) {
