@@ -428,6 +428,11 @@ void calcualte_mcu_block(FILE *fp, byte component_id)
             printf("0x00 EOB!\n");
             break;
         }
+        if(zerosnum_needread == 0xf0) {
+            printf("0xf0 16bits");
+            i+=16;
+            continue;
+        }
         need_read_bit = zerosnum_needread & 0x0f;
         zerosnum = (zerosnum_needread >> 4) & 0x0f;
         printf("there are %u leading zero, %u need to read\n",need_read_bit,zerosnum);
@@ -488,11 +493,11 @@ void calcualte_mcu_block(FILE *fp, byte component_id)
                 block[ii][jj] += c(x) * s[jj][x] * cos_cache[(ii + ii + 1) * x];
             }
             block[ii][jj] = block[ii][jj] / 2.0;
-            printf("%g ",block[ii][jj]);
+            // printf("%g ",block[ii][jj]);
         }
-        printf("\n");
+        // printf("\n");
     }
-    printf("-----------------------------------------------\n\n");
+    // printf("-----------------------------------------------\n\n");
 }
 void calculate_mcu(FILE* fp)
 {
@@ -563,6 +568,7 @@ void calculate_mcu(FILE* fp)
                 // double** mcu = (double**) malloc(f0.hmax*f0.vmax*sizeof(double**));
                 for (int a =0; a<f0.frame_components[component_id].vertical_sample; a++) {
                     for (int b = 0; b<f0.frame_components[component_id].horizontal_sample; b++) {
+                        printf("now id = %d\n",component_id);
                         for (int x = 0; x < 8; x++) {
                             for (int y = 0; y < 8; y++) {
                                 // printf("%g |",(*pseudo_block)[x][y]);
@@ -577,9 +583,9 @@ void calculate_mcu(FILE* fp)
                         // printf("\nlocation = %8X\n", (unsigned int) &(*(data_unit[qt_id][a][b])));
                         // printf("\nlocation2 = %8X\n", (unsigned int) &((*data_unit[qt_id][a][b])[5][4]));
                         // printf("\nlocation2 = %8X\n", (unsigned int) &((*test)[5][4]));
+                        printf("-----------------------------------------------\n\n");
                     }
                 }
-                printf("-----------------------------------------------\n\n");
             }
         }
     }
@@ -618,16 +624,14 @@ void calculate_mcu(FILE* fp)
             //         }
             //     }
             // }
-    rgb_element mcu_rgb[mcus_on_x*mcus_on_y][mcu_height][mcu_width];
+    rgb_element mcu_rgb[mcu_height][mcu_width];
     rgb_element rgb_image[mcu_width * mcus_on_x][mcu_height * mcus_on_y];
-    int yV = f0.vmax/f0.frame_components[0].vertical_sample,
-        yH = f0.hmax/f0.frame_components[0].horizontal_sample,
-        cb_start = f0.frame_components[0].vertical_sample * f0.frame_components[0].horizontal_sample,
-        cbV = f0.vmax/f0.frame_components[1].vertical_sample,
-        cbH =f0.hmax/ f0.frame_components[1].horizontal_sample,
-        crV = f0.vmax/f0.frame_components[2].vertical_sample,
-        cr_start = f0.frame_components[1].vertical_sample * f0.frame_components[1].horizontal_sample,
-        crH =f0.hmax/ f0.frame_components[2].horizontal_sample;
+    int YV = f0.frame_components[0].vertical_sample / f0.vmax,
+        YH = f0.frame_components[0].horizontal_sample / f0.hmax,
+        CbV = f0.frame_components[1].vertical_sample / f0.vmax,
+        CbH = f0.frame_components[1].horizontal_sample / f0.hmax,
+        CrV = f0.frame_components[2].vertical_sample / f0.vmax,
+        CrH = f0.frame_components[2].horizontal_sample / f0.hmax;
     for (int i  = 0; i<mcus_on_y; i++) {
         for (int j = 0; j<mcus_on_x; j++) {
             //1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q
@@ -662,42 +666,42 @@ void calculate_mcu(FILE* fp)
 
             // # Y, Cr 的算法跟 Cb 完全相同，省略之
             // printf("max x = %d (mcu_width = %d, col = %d) max y = %d(mcu_height = %d, row = %d)\n",mcu_width * mcus_on_x,mcu_width,mcus_on_x,mcu_height * mcus_on_y,mcu_height,mcus_on_y);
-            for (int a = 0; a < mcu_height; a++) {
-                for (int b = 0; b < mcu_width; b++) {
+            for (int mcu_y = 0; mcu_y < mcu_height; mcu_y++) {
+                for (int mcu_x = 0; mcu_x < mcu_width; mcu_x++) {
                     double Y = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + 0*mcu_width*mcu_height
-                                    + (a/(8*yH))*mcu_height
-                                    + (b/(8*yV))][(a % (8*yH)) /yH][(b % (8*yV)) /yV],
+                                    + ((mcu_y*YH)/8)*mcu_height
+                                    + mcu_x*YV/8][(mcu_y*YH)%8][(mcu_x*YV)%8],
                         Cb = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + 1*mcu_width*mcu_height
-                                    + (a/(8*cbH))*mcu_height
-                                    + b/(8*cbV)][(a % (8*cbH)) /cbH][(b % (8*cbV)) /cbV],
+                                    + ((mcu_y*CbH)/8)*mcu_height
+                                    + mcu_x*CbV/8][(mcu_y*CbH)%8][(mcu_x*CbV)%8],
                         Cr = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
                                     + j*5*mcu_width*mcu_height
                                     + 2*mcu_width*mcu_height
-                                    + (a/(8*crH))*mcu_height
-                                    + b/(8*crV)][(a % (8*crH)) /crH][(b % (8*crV)) /crV];
-                    double R = Y + 1.402*Cr + 128,
-                        G = Y - (0.34414*Cb) - (0.71414*Cr) + 128,
-                        B = Y + (1.772*Cb) + 128;
-                    mcu_rgb[i*mcus_on_x + j][a][b].r = (byte)(R < 0 ? 0 : R);
-                    mcu_rgb[i*mcus_on_x + j][a][b].g = (byte)(G < 0 ? 0 : G);
-                    mcu_rgb[i*mcus_on_x + j][a][b].b = (byte)(B < 0 ? 0 : B);
+                                    + ((mcu_y*CrH)/8)*mcu_height
+                                    + mcu_x*CrV/8][(mcu_y*CrH)%8][(mcu_x*CrV)%8];
+                    double r = Y + 1.402*Cr + 128,
+                        g = Y - (0.34414*Cb) - (0.71414*Cr) + 128,
+                        b = Y + (1.772*Cb) + 128;
+                    mcu_rgb[mcu_y][mcu_x].r = (byte)(r < 0 ? 0 : r);
+                    mcu_rgb[mcu_y][mcu_x].g = (byte)(g < 0 ? 0 : g);
+                    mcu_rgb[mcu_y][mcu_x].b = (byte)(b < 0 ? 0 : b);
 
-                    mcu_rgb[i*mcus_on_x + j][a][b].r = (byte)(R > 255 ? 255 : R);
-                    mcu_rgb[i*mcus_on_x + j][a][b].g = (byte)(G > 255 ? 255 : G);
-                    mcu_rgb[i*mcus_on_x + j][a][b].b = (byte)(B > 255 ? 255 : B);
+                    mcu_rgb[mcu_y][mcu_x].r = (byte)(r > 255 ? 255 : r);
+                    mcu_rgb[mcu_y][mcu_x].g = (byte)(g > 255 ? 255 : g);
+                    mcu_rgb[mcu_y][mcu_x].b = (byte)(b > 255 ? 255 : b);
                 }
             }
-        }
-    }
-    for (int y = 0; y < f0.height; y++) {
-        for (int x = 0; x < f0.width; x++) {
-            // printf("x = %d y = %d \n", x, y);
-            // printf("test: %u",rgb_image[x][y].r);
-            rgb_image[x][y] = mcu_rgb[y/mcu_height * mcus_on_x + x/mcu_width][y%mcu_height][x%mcu_width];
+            for (int y = i*mcu_height; y < (i+1)*mcu_height; y++) {
+                for (int x = j*mcu_width; x < (j+1)*mcu_width; x++) {
+                    // printf("x = %d y = %d \n", x, y);
+                    // printf("test: %u",rgb_image[x][y].r);
+                    rgb_image[x][y] = mcu_rgb[y - i*mcu_height][x - j*mcu_width];
+                }
+            }
         }
     }
     free(data_unit);
