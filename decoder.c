@@ -7,7 +7,7 @@
 #include <math.h>
 #include <string.h>
 #include "util.h"
-#include "bitmap_image.hpp"
+#include "./bitmap/bitmap_image.hpp"
 
 typedef struct {
     byte horizontal_sample;
@@ -39,21 +39,21 @@ typedef struct {
 int huffman_table_index (byte index)
 {
     switch(index) {
-    case 0x10:
-        //AC 0
-        return 2;
-    case 0x11:
-        //AC 1
-        return 3;
-    case 0x00:
-        //DC 0
-        return 0;
-    case 0x01:
-        //DC 1
-        return 1;
-    default:
-        printf("huffman table index error");
-        exit(1);
+        case 0x10:
+            //AC 0
+            return 2;
+        case 0x11:
+            //AC 1
+            return 3;
+        case 0x00:
+            //DC 0
+            return 0;
+        case 0x01:
+            //DC 1
+            return 1;
+        default:
+            printf("huffman table index error");
+            exit(1);
     }
 }
 
@@ -534,16 +534,16 @@ void calculate_mcu(FILE* fp)
                                          + 0*mcu_width*mcu_height
                                          + (a/(8*yV))*mcu_height
                                          + (b/(8*yH))][(a % (8*yV)) /yV][(b % (8*yH)) /yH],
-                               Cb = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
-                                              + j*5*mcu_width*mcu_height
-                                              + 1*mcu_width*mcu_height
-                                              + (a/(8*cbV))*mcu_height
-                                              + b/(8*cbH)][(a % (8*cbV)) /cbV][(b % (8*cbH)) /cbH],
-                                    Cr = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
-                                                   + j*5*mcu_width*mcu_height
-                                                   + 2*mcu_width*mcu_height
-                                                   + (a/(8*crV))*mcu_height
-                                                   + b/(8*crH)][(a % (8*crV)) /crV][(b % (8*crH)) /crH];
+                            Cb = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                            + j*5*mcu_width*mcu_height
+                                            + 1*mcu_width*mcu_height
+                                            + (a/(8*cbV))*mcu_height
+                                            + b/(8*cbH)][(a % (8*cbV)) /cbV][(b % (8*cbH)) /cbH],
+                            Cr = data_unit[i*mcus_on_x*5*mcu_width*mcu_height
+                                            + j*5*mcu_width*mcu_height
+                                            + 2*mcu_width*mcu_height
+                                            + (a/(8*crV))*mcu_height
+                                            + b/(8*crH)][(a % (8*crV)) /crV][(b % (8*crH)) /crH];
                     double R = Y + 1.402*(Cr - 128),
                            G = Y - 0.34414*(Cb - 128) - 0.71414*(Cr -  128),
                            B = Y + 1.772*(Cb - 128);
