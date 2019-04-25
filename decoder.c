@@ -350,9 +350,9 @@ double c(int i)
         return 1.0;
     }
 }
-void calcualte_mcu_block(FILE *fp, byte component_id)
+void calculate_mcu_block(FILE *fp, byte component_id)
 {
-// void calcualte_mcu_block(FILE *fp,byte component_id) {
+// void calculate_mcu_block(FILE *fp,byte component_id) {
     //https://github.com/MROS/jpeg_tutorial/blob/master/doc/%E8%B7%9F%E6%88%91%E5%AF%ABjpeg%E8%A7%A3%E7%A2%BC%E5%99%A8%EF%BC%88%E5%9B%9B%EF%BC%89%E8%AE%80%E5%8F%96%E5%A3%93%E7%B8%AE%E5%9C%96%E5%83%8F%E6%95%B8%E6%93%9A.md
     // 每個 block 都是 8 * 8 ，最左上角的數值就是直流變量，要使用直流霍夫曼表來解碼；
     //而餘下的 63 個數值是交流變量，使用交流霍夫曼表來解碼。
@@ -456,7 +456,7 @@ void calcualte_mcu_block(FILE *fp, byte component_id)
     for (int jj = 0; jj < 8; jj++) {
         for (int x = 0; x < 8; x++) {
             for (int y = 0; y < 8; y++) {
-                s[jj][x] += c (y) * tmp[x][y] * cos_cache[(jj + jj + 1) * y];
+                s[jj][x] += c (y) * tmp[x][y] * cos_cache[(jj*2 + 1) * y];
             }
             s[jj][x] = s[jj][x] / 2.0;
         }
@@ -465,7 +465,7 @@ void calcualte_mcu_block(FILE *fp, byte component_id)
     for (int ii = 0; ii < 8; ii++) {
         for (int jj = 0; jj < 8; jj++) {
             for (int x = 0; x < 8; x++) {
-                block[ii][jj] += c(x) * s[jj][x] * cos_cache[(ii + ii + 1) * x];
+                block[ii][jj] += c(x) * s[jj][x] * cos_cache[(ii*2 + 1) * x];
             }
             block[ii][jj] = block[ii][jj] / 2.0;
             block[ii][jj] += 128.0;
@@ -501,7 +501,7 @@ void calculate_mcu(FILE* fp)
                 // double** mcu = (double**) malloc(f0.hmax*f0.vmax*sizeof(double**));
                 for (int a =0; a<f0.frame_components[component_id].vertical_sample; a++) {
                     for (int b = 0; b<f0.frame_components[component_id].horizontal_sample; b++) {
-                        calcualte_mcu_block(fp, component_id);
+                        calculate_mcu_block(fp, component_id);
                         for (int x = 0; x < 8; x++) {
                             for (int y = 0; y < 8; y++) {
                                 data_unit[i*mcus_on_x*5*mcu_width*mcu_height

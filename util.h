@@ -13,7 +13,7 @@ typedef uint8_t byte;
 
 typedef uint16_t word;
 
-int zigzag_index[8][8] = {
+const int zigzag_index[8][8] = {
     0, 1, 5, 6,14,15,27,28,
     2, 4, 7,13,16,26,29,42,
     3, 8,12,17,25,30,41,43,
@@ -24,11 +24,35 @@ int zigzag_index[8][8] = {
     35,36,48,49,57,58,62,63
 };
 
+const int quantize_table[8][8] = {
+    16, 11, 10, 16, 24,  40, 51, 61,
+    12, 12, 14, 19, 26,  58, 60, 55,
+    14, 13, 16, 24, 40,  57, 69, 56,
+    14, 17, 22, 29, 51,  87, 80, 62,
+    18, 22, 37, 56, 68,  109, 103, 77,
+    24, 35, 55, 64, 81,  104, 113, 92,
+    49, 64, 78, 87, 103, 121, 120, 101,
+    72, 92, 95, 98, 112, 100, 103, 99
+};
+
 typedef struct {
     byte r;
     byte g;
     byte b;
 }rgb_element;
+// 我們完全可以每個點保存一個 8bit 的亮度值, 每 2x2 個點保存一個 Cr Cb 值, 而圖像在肉眼中的感覺不會起太大的變化.
+// 原來用 RGB 模型, 4 個點需要 4x3=12 字節. 而現在僅需要 4+2=6 字節
+typedef struct {
+    byte y[4];
+    byte cb;
+    byte cr;
+}yuv12_element;
+
+typedef struct {
+    byte y;
+    byte cb;
+    byte cr;
+}yuv_element;
 
 #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
 #define BYTE_TO_BINARY(byte)  \
