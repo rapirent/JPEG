@@ -117,7 +117,7 @@ void read_frame(FILE *fp)
     int len = read_word_to_bigendian(fp);
     printf("section length = %x (hex) %u (dec)\n",len,len);
 
-    //   - 数据精度 (1 byte) 每个样本位数, 通常是 8 (大多数软件不支持 12 和 16)
+    //   - 數據精度 (1 byte) 每個樣本位數, 通常是 8 (大多數軟件不支持 12 和 16)
     fread(&(f0.precision),1,1,fp);
     printf("precision is %d(dec) \n",f0.precision);
     // Number of lines – Specifies the maximum number of lines in the source image.
@@ -136,12 +136,12 @@ void read_frame(FILE *fp)
     f0.vmax = 0x00;
     f0.hmax = 0x00;
     for (int i = 0; i < f0.components_num; i++) {
-        //   - 每个 component: 3 bytes
+        //   - 每個 component: 3 bytes
         //      - component id (1 = Y, 2 = Cb, 3 = Cr, 4 = I, 5 = Q)
         fread(&component_id,1,1,fp);
         printf("------------\nnow is reading component whose id=%d(dec)\n",
                component_id);
-        //      - 采样系数 (bit 0-3 vert., 4-7 hor.)
+        //      - 採樣係數 (bit 0-3 vert., 4-7 hor.)
         fread(&sample,1,1,fp);
         // 先Horizontal sampling factor 再Vertical sampling factor
         (f0.frame_components[component_id-1]).horizontal_sample = (sample >> 4) & 0x0f;
@@ -468,11 +468,11 @@ void calculate_mcu_block(FILE *fp, byte component_id)
                 block[ii][jj] += c(x) * s[jj][x] * cos_cache[(ii*2 + 1) * x];
             }
             block[ii][jj] = block[ii][jj] / 2.0;
-            block[ii][jj] += 128.0;
+            block[ii][jj] -= 128.0;
         }
     }
 }
-void calculate_mcu(FILE* fp)
+void calculate_mcu(FILE* fp, const char* fwrite)
 {
     //一個 (Hmax*8,Vmax*8) 的塊被稱作 MCU (Minimun Coded Unix) 前面例子中一個
     // MCU = YDU,YDU,YDU,YDU,CbDU,CrDU
@@ -565,7 +565,7 @@ void calculate_mcu(FILE* fp)
                              ,mcu_rgb[y/mcu_height * mcus_on_x + x/mcu_width][y%mcu_height][x%mcu_width].b);
         }
     }
-    outimg.save_image("image.bmp");
+    outimg.save_image(fwrite);
 }
 
 int main(int argc,char* argv[])
@@ -579,6 +579,7 @@ int main(int argc,char* argv[])
         printf("%s can't be opened\n", argv[1]);
         exit(1);
     }
+    const char* fwrite = argc ==3 ? argv[2] : "image.bmp";
     byte h;
     byte l;
     bool b_SOI = false;
@@ -607,7 +608,7 @@ int main(int argc,char* argv[])
             case SOS:
                 printf("\nread SOS\n");
                 read_sos(fp);
-                calculate_mcu(fp);
+                calculate_mcu(fp,fwrite);
                 break;
             case APP0:
             case APP1:
