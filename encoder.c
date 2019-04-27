@@ -99,6 +99,7 @@ double c(int i)
 
 void write_one_bit(FILE *fp, int value)
 {
+    printf("receive write request for %d\n",value);
     if (value != 1 && value != 0) {
         printf("bit number should be a binary\n");
         exit(1);
@@ -115,88 +116,78 @@ void write_one_bit(FILE *fp, int value)
 
 void codeword_encode (FILE *fp, int value, byte length)
 {
-    //前面已經進行過了
-    // if (value >= 0) {
-    //     write_one_bit(fp,0);
-    // }
-    // else {
-    //     write_one_bit(fp,1);
-    // }
-    for (int i = 1, tmp = value; tmp ; i++) {
-        write_one_bit(fp,(value >> (i)) & 0x01);
-        length--;
-        tmp = tmp >> 1;
+    for (int i = length-1; i>=0 ; i--) {
+        write_one_bit(fp,(value >> i) & 0x01);
     }
+    // assert(length==0);
 }
 
 byte find_length (int* value)
 {
-    byte need_write_length = 1;
+    byte need_write_length = 0;
+    int tmp = (*value);
     if (*value < 0) {
-        *value = -(*value);
+        tmp = -(*value);
     }
-    for (int tmp = *value;tmp ;tmp = tmp >> 1) {
+    for (;tmp ;tmp = tmp >> 1) {
         need_write_length++;
     }
     //add leading 1 if negative
-    *value = (*value)>=0 ? 0 : (*value) | (0x1 << need_write_length);
+    *value = (*value) > 0 ? (*value) : ((0x1 << need_write_length) + (*value) -1);
     return need_write_length;
 }
 
 void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
     double tmp[8][8], s[8][8];
     // printf("Start fdct!!!\n");
+    byte quantized_block[64];
     memset(tmp,0,sizeof(tmp));
     memset(s,0,sizeof(s));
-    for (int i = 0;i<8;i++) {
-        for (int j = 0;j<8;j++) {
-            printf("%d ",(int)block[i][j]);
-        }
-        printf("\n");
-    }
-    printf("-------\n");
-
-    for (int jj = 0; jj < 8; jj++) {
+    for (int ii = 0; ii < 8; ii++) {
         for (int x = 0; x < 8; x++) {
             for (int y = 0; y < 8; y++) {
-                s[jj][x] += c (y) * block[x][y] * cos_cache[(jj*2 + 1) * y];
+                s[ii][x] += block[ii][y] * cos_cache[(y*2 + 1) * x];
             }
-            s[jj][x] = s[jj][x] / 2.0;
+            s[ii][x] = c(x) *s[ii][x] / 2.0;
         }
     }
-
     for (int ii = 0; ii < 8; ii++) {
         for (int jj = 0; jj < 8; jj++) {
             for (int x = 0; x < 8; x++) {
-                tmp[ii][jj] += c(x) * s[jj][x] * cos_cache[(ii*2 + 1) * x];
+                tmp[ii][jj] += s[x][jj] * cos_cache[(x*2 + 1) * ii];
             }
-            tmp[ii][jj] = tmp[ii][jj] / 2.0;
-            block[ii][jj] = tmp[ii][jj] -  128;
+            block[ii][jj] = c(ii) * tmp[ii][jj] / 2.0;
             // printf("%d ",(int)tmp[ii][jj]);
         }
         // printf("\n");
     }
     // printf("\n---------\n");
     // printf("zigzag arrange start!!!\n");
-    // for (int x = 0; x < 8; x++) {
-    //     for (int y = 0; y < 8; y++) {
-    //         // printf("%d %d\n",x,y);
-    //         s[x][y] = tmp[zigzag_index[x][y]/8][zigzag_index[x][y]%8];
-    //     }
-    // }
+    for (int x = 0; x < 8; x++) {
+        for (int y = 0; y < 8; y++) {
+            // printf("%d %d\n",x,y);
+            s[x][y] = block[zigzag_index[x][y]/8][zigzag_index[x][y]%8];
+        }
+    }
+    for (int x = 0; x < 8; x++) {
+        for (int y = 0; y < 8; y++) {
+            // printf("%d %d\n",x,y);
+            quantized_block[x*8+y] = s[x][y];
+        }
+    }
 
     // 4. 量化
     //     對於前面得到的 64 個空間頻率振幅值, 我們將對它們作幅度分層量化操作.方
     // 法就是分別除以量化表裡對應值並四捨五入.
     // printf("quantization start!!!\n");
     for (int i = 0 ; i<64; i++ ) {
-        block[zigzag_index[i/8][i%8]/8][zigzag_index[i/8][i%8]%8] /= zigzag_quantize_table[category[yuv_id]][zigzag_index[i/8][i%8]] + 0.5;
+        quantized_block[i] = quantized_block[i]/zigzag_quantize_table[category[yuv_id]][i]+0.5;
         // printf("%u ", block[zigzag_index[i/8][i%8]/8][zigzag_index[i/8][i%8]%8]);
         // if((i+1)%8==0) {
         //     printf("\n");
         // }
     }
-
+    printf("fukcing!gogogo\n");
     // printf("gogogo!\n");
     // DC即一塊圖像樣本的平均值. 就是說, 它包含了原始 8x8 圖像塊裡的很多能量. (通常
     // 會得到一個很大的數值)
@@ -205,7 +196,7 @@ void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
     // DC 值的差別進行編碼. (Y, Cb, Cr 分別有自己的 DC)
     // Diff = DC(i)  - DC(i-1)
     // 所以這一塊的 DC(i) 就是:  DC(i)  = DC(i-1)  + Diff
-    int diff = block[0][0] - dc_block[yuv_id];
+    int diff = quantized_block[0] - dc_block[yuv_id];
     // printf("dc encode\n");
     int need_write_length;
     int index;
@@ -253,53 +244,53 @@ void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
     // 注意 (15,0) 表示了 16 個連續的 0.
     // printf("ac encode\n");
     int count_zero = 0;
-    for (int i = 1; i < 64; i++) {
-        if (!block[i/8][i%8]&&count_zero <16) {
+    int value;
+    byte cof_index;
+    int padding_start_index=63;
+    while (padding_start_index>1&&quantized_block[padding_start_index]) {
+        padding_start_index--;
+    }
+    for (int i = 1; i <= padding_start_index; i++) {
+        if (!quantized_block[i]) {
             count_zero++;
+            continue;
         }
-        else {
-            //compress
-            if(count_zero == 16) {
-                //write 0xf0
-                // c = 0xf0;
-                // length = 15; //ZRL
-                //F/0(ZRL)
-                for (int j = 0; j<strlen((char*)ac_cof[category[yuv_id]][15][0]);j++) {
-                    // printf("writing...%d\n",ac_cof[category[yuv_id]][15][0][j] - '0');
-                    write_one_bit(fp,ac_cof[category[yuv_id]][15][0][j] - '0');
+        if (count_zero>=16) {
+            printf("fukcing!nonono\n");
+            for (int j = 0;j<count_zero/16;j++) {
+                    printf("%s\n----\n",ac_cof[category[yuv_id]][0xf][0x0]);
+                    printf("writing length = %d\n",strlen((char*)ac_cof[category[yuv_id]][0xf][0x0]));
+                for (int k = 0; k<strlen((char*)ac_cof[category[yuv_id]][0xf0]);k++) {
+                    write_one_bit(fp,ac_cof[category[yuv_id]][0xf][0x0][k] - '0');
                 }
+                // fwrite(fp,1,16,ac_cof[category[yuv_id]][0xF][0x0]);
             }
-            else {
-                // c = (count_zero << 4) & 0xf0;
-                // 括號裡的數值正好合成一個word. 後面被編碼的數字表示範圍是  -32767..32767.
-                // 合成的字節裡, 高 4 位是前續 0 的個數, 低 4 位描述了後面數字的位數.
-                // c = c | ((length = find_length(block[i/8][i%8]) >> 4) & 0x0f);
-                need_write_length = find_length(&(block[i/8][i%8]));
-                // printf("need_length = %d\n",need_write_length);
-                if (count_zero == 15 || count_zero == 0) {
-                    index = need_write_length+1;//the first place is store ZRL & EOB
-                }
-                else {
-                    index = need_write_length;
-                }
-                for (int j = 0; j<strlen((char*)ac_cof[category[yuv_id]][count_zero][index]);j++) {
-                    // printf("writing...%d\n",ac_cof[category[yuv_id]][count_zero][index][j] - '0');
-                    write_one_bit(fp,ac_cof[category[yuv_id]][count_zero][index][j] - '0');
-                }
-                codeword_encode(fp,block[i/8][i%8],need_write_length);
-            }
-            count_zero = 0;
+            count_zero = count_zero % 16;
         }
+        value = quantized_block[i];
+        need_write_length = find_length(&value);
+        printf("fukcing!nono\n");
+            // c = (count_zero << 4) & 0xf0;
+            // 括號裡的數值正好合成一個word. 後面被編碼的數字表示範圍是  -32767..32767.
+            // 合成的字節裡, 高 4 位是前續 0 的個數, 低 4 位描述了後面數字的位數.
+            // c = c | ((length = find_length(block[i/8][i%8]) >> 4) & 0x0f);
+            // printf("need_length = %d\n",need_write_length);
+        printf("count_zero is %u, match word = %d\n", (count_zero << 4)&0xf0,need_write_length);
+        printf("%s\n----\n",ac_cof[category[yuv_id]][count_zero << 4|need_write_length]);
+        for (int j = 0; j<strlen((char*)ac_cof[category[yuv_id]][count_zero << 4][need_write_length]);j++) {
+            // printf("writing...%d\n",ac_cof[category[yuv_id]][count_zero][index][j] - '0');
+            write_one_bit(fp,ac_cof[category[yuv_id]][count_zero << 4|need_write_length][j] - '0');
+        }
+        codeword_encode(fp,value,need_write_length);
+        count_zero = 0;
     }
-    if (count_zero) {
-        // EOB
+    if (padding_start_index!=63) {
+        // EOB 0x00
         // fwrite(&c,1,1,fp);
-        for (int i = 0; i<strlen((char*)ac_cof[category[yuv_id]][0][0]);i++) {
-            write_one_bit(fp,ac_cof[category[yuv_id]][0][0][i] - '0');
+        for (int i = 0; i<strlen((char*)ac_cof[category[yuv_id]][0x0][0x0]);i++) {
+            write_one_bit(fp,ac_cof[category[yuv_id]][0x0][0x0][i] - '0');
         }
     }
-
-
 }
 
 void calculate_mcu(FILE *fp,int block_x, int block_y, yuv_element* yuv_image) {
@@ -320,8 +311,8 @@ void calculate_mcu(FILE *fp,int block_x, int block_y, yuv_element* yuv_image) {
                     switch(yuv_id) {
                         case 0:
                             mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].y;
-                            printf("fukcing value\n");
-                            printf("%d\n\n",mcu[y][x]);
+                            // printf("fukcing value\n");
+                            // printf("%d\n\n",mcu[y][x]);
                             break;
                         case 1:
                             mcu[y][x] = yuv_image[(block_y - y) * image_width + block_x + x].cb;
@@ -337,6 +328,7 @@ void calculate_mcu(FILE *fp,int block_x, int block_y, yuv_element* yuv_image) {
                 else {
                     mcu[y][x] = 0;
                 }
+                mcu[y][x]-=128;
                 // printf("x=%d y=%d\n",block_x,block_y);
                 // printf("ix=%d iy=%d\n",x,y);
             }
@@ -357,8 +349,8 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
     fseek(bitmap_f, 18, SEEK_CUR);
-    fread(&image_height, 1, sizeof(int), bitmap_f);
     fread(&image_width, 1, sizeof(int), bitmap_f);
+    fread(&image_height, 1, sizeof(int), bitmap_f);
     if((image_width&7)!=0 || (image_height&7)!=0) {
         exit(1);
     }
