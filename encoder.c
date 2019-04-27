@@ -258,10 +258,10 @@ void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
         if (count_zero>=16) {
             printf("fukcing!nonono\n");
             for (int j = 0;j<count_zero/16;j++) {
-                    printf("%s\n----\n",ac_cof[category[yuv_id]][0xf][0x0]);
-                    printf("writing length = %d\n",strlen((char*)ac_cof[category[yuv_id]][0xf][0x0]));
+                    printf("%s\n----\n",ac_cof[category[yuv_id]][0xf0]);
+                    printf("writing length = %d\n",strlen((char*)ac_cof[category[yuv_id]][0xf0]));
                 for (int k = 0; k<strlen((char*)ac_cof[category[yuv_id]][0xf0]);k++) {
-                    write_one_bit(fp,ac_cof[category[yuv_id]][0xf][0x0][k] - '0');
+                    write_one_bit(fp,ac_cof[category[yuv_id]][0xf0][k] - '0');
                 }
                 // fwrite(fp,1,16,ac_cof[category[yuv_id]][0xF][0x0]);
             }
@@ -276,10 +276,10 @@ void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
             // c = c | ((length = find_length(block[i/8][i%8]) >> 4) & 0x0f);
             // printf("need_length = %d\n",need_write_length);
         printf("count_zero is %u, match word = %d\n", (count_zero << 4)&0xf0,need_write_length);
-        printf("%s\n----\n",ac_cof[category[yuv_id]][count_zero << 4|need_write_length]);
-        for (int j = 0; j<strlen((char*)ac_cof[category[yuv_id]][count_zero << 4][need_write_length]);j++) {
+        printf("%s\n----\n",ac_cof[category[yuv_id]][(count_zero << 4)&0xf0|need_write_length]);
+        for (int j = 0; j<strlen((char*)ac_cof[category[yuv_id]][(count_zero << 4)&0xf0|need_write_length]);j++) {
             // printf("writing...%d\n",ac_cof[category[yuv_id]][count_zero][index][j] - '0');
-            write_one_bit(fp,ac_cof[category[yuv_id]][count_zero << 4|need_write_length][j] - '0');
+            write_one_bit(fp,ac_cof[category[yuv_id]][(count_zero << 4)&0xf0|need_write_length][j] - '0');
         }
         codeword_encode(fp,value,need_write_length);
         count_zero = 0;
@@ -287,8 +287,8 @@ void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
     if (padding_start_index!=63) {
         // EOB 0x00
         // fwrite(&c,1,1,fp);
-        for (int i = 0; i<strlen((char*)ac_cof[category[yuv_id]][0x0][0x0]);i++) {
-            write_one_bit(fp,ac_cof[category[yuv_id]][0x0][0x0][i] - '0');
+        for (int i = 0; i<strlen((char*)ac_cof[category[yuv_id]][0x00]);i++) {
+            write_one_bit(fp,ac_cof[category[yuv_id]][0x00][i] - '0');
         }
     }
 }
