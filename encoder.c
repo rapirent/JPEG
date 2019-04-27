@@ -20,76 +20,12 @@ int image_height,image_width;
 byte category[3] = {0,1,1}; // table for luminance or chrominance
 byte zigzag_quantize_table[2][64];
 
-// Implementation of LLM DCT.
-// void llm_dct(const double in[8], double out[8]) {
-//     // Constants:
-//     const double s1 = sin(1. * M_PI / 16.);
-//     const double c1 = cos(1. * M_PI / 16.);
-//     const double s3 = sin(3. * M_PI / 16.);
-//     const double c3 = cos(3. * M_PI / 16.);
-//     const double r2s6 = sqrt(2.) * sin(6. * M_PI / 16.);
-//     const double r2c6 = sqrt(2.) * cos(6. * M_PI / 16.);
-
-//     // After stage 1:
-//     const double s1_0 =  in[0] + in[7];
-//     const double s1_1 =  in[1] + in[6];
-//     const double s1_2 =  in[2] + in[5];
-//     const double s1_3 =  in[3] + in[4];
-//     const double s1_4 = -in[4] + in[3];
-//     const double s1_5 = -in[5] + in[2];
-//     const double s1_6 = -in[6] + in[1];
-//     const double s1_7 = -in[7] + in[0];
-
-//     // After stage 2:
-//     const double s2_0 =  s1_0 + s1_3;
-//     const double s2_1 =  s1_1 + s1_2;
-//     const double s2_2 = -s1_2 + s1_1;
-//     const double s2_3 = -s1_3 + s1_0;
-
-//     const double z1 = c3 * (s1_7 + s1_4);
-//     const double s2_4 = ( s3-c3) * s1_7 + z1;
-//     const double s2_7 = (-s3-c3) * s1_4 + z1;
-
-//     const double z2 = c1 * (s1_6 + s1_5);
-//     const double s2_5 = ( s1-c1) * s1_6 + z2;
-//     const double s2_6 = (-s1-c1) * s1_5 + z2;
-
-//     // After stage 3:
-//     const double s3_0 =  s2_0 + s2_1;
-//     const double s3_1 = -s2_1 + s2_0;
-
-//     const double z3 = r2c6 * (s2_3 + s2_2);
-//     const double s3_2 = ( r2s6-r2c6) * s2_3 + z3;
-//     const double s3_3 = (-r2s6-r2c6) * s2_2 + z3;
-
-//     const double s3_4 =  s2_4 + s2_6;
-//     const double s3_5 = -s2_5 + s2_7;
-//     const double s3_6 = -s2_6 + s2_4;
-//     const double s3_7 =  s2_7 + s2_5;
-
-//     // After stage 4:
-//     const double s4_4 = -s3_4 + s3_7;
-//     const double s4_5 =  s3_5 * sqrt(2.);
-//     const double s4_6 =  s3_6 * sqrt(2.);
-//     const double s4_7 =  s3_7 + s3_4;
-
-//     // Shuffle and scaling:
-//     out[0] = s3_0 / sqrt(8.);
-//     out[4] = s3_1 / sqrt(8.);
-//     out[2] = s3_2 / sqrt(8.);
-//     out[6] = s3_3 / sqrt(8.);
-//     out[7] = s4_4 / sqrt(8.);
-//     out[3] = s4_5 / sqrt(8.);  // Alternative: s3_5 / 2
-//     out[5] = s4_6 / sqrt(8.);
-//     out[1] = s4_7 / sqrt(8.);
-// }
-
 double cos_cache[200];
-
+double PI = acos(-1);
 void init_cos_cache()
 {
     for (int i = 0; i < 200; i++) {
-        cos_cache[i] = cos(i * M_PI / 16.0);
+        cos_cache[i] = cos(i * PI / 16.0);
     }
 }
 
@@ -107,7 +43,7 @@ void write_one_bit(FILE *fp, int value, bool mode)
     static byte buffer = 0x00;
     static byte count = 0;
     if(mode==true) {
-        for (int i = count; i<7;i++) {
+        for (int i = count; i<7; i++) {
             buffer = (buffer << 1);
         }
         fwrite(&buffer,1,1,fp);
@@ -145,94 +81,82 @@ byte find_length (int* value)
     if (*value < 0) {
         tmp = -(*value);
     }
-    for (;tmp ;tmp = tmp >> 1) {
+    for (; tmp ; tmp = tmp >> 1) {
         need_write_length++;
     }
     //add leading 1 if negative
     *value = (*value) > 0 ? (*value) : ((0x1 << need_write_length) + (*value) -1);
     return need_write_length;
 }
-double PI = acos(-1);
-void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
+void calculate_mcu_block(FILE *fp,byte block[][8],int yuv_id)
+{
     //TODO
     double tmp[8][8], s[8][8];
     // printf("Start fdct!!!\n");
-    int quantized_block[64];
+    word quantized_block[64];
     memset(tmp,0,sizeof(tmp));
     memset(s,0,sizeof(s));
-    // for (int ii = 0; ii < 8; ii++) {
-    //     for (int x = 0; x < 8; x++) {
-    //         for (int y = 0; y < 8; y++) {
-    //             s[ii][x] += block[ii][y] * cos_cache[(y*2 + 1) * x];
-    //         }
-    //         s[ii][x] = c(x) *s[ii][x] / 2.0;
-    //     }
-    // }
-    // for (int ii = 0; ii < 8; ii++) {
-    //     for (int jj = 0; jj < 8; jj++) {
-    //         for (int x = 0; x < 8; x++) {
-    //             tmp[ii][jj] += s[x][jj] * cos_cache[(x*2 + 1) * ii];
-    //         }
-    //         block[ii][jj] = c(ii) * tmp[ii][jj] / 2.0;
-    //         // printf("%d ",(int)block[ii][jj]);
-    //     }
-    //     // printf("\n");
-    // }
-    // // printf("\n---------\n");
-	for(int i=0;i<8;i++)
-		for(int j=0;j<8;j++){
-			double sum=0;
-			for(int k=0;k<8;k++)
-				sum+=(double)block[i][k]*cos((2*k+1)*j*PI/16);
-			tmp[i][j] = (j==0 ? (1.0/sqrt(2)):1.0)*sum/2;
-		}
-	for(int i=0;i<8;i++) {
-		for(int j=0;j<8;j++){
-			double sum=0;
-			for(int k=0;k<8;k++)
-				sum+=tmp[k][j]*cos((2*k+1)*i*PI/16);
-			block[i][j] = round((i==0 ? (1.0/sqrt(2)):1.0)*sum/2);
-            // printf("%d ",j);
-            // printf("%d ",block[i][j]);
-		}
-        // printf("\n");
-    }
-    // printf("\n---------\n");
-    // printf("zigzag arrange start!!!\n");
-    for (int x = 0; x < 8; x++) {
-        for (int y = 0; y < 8; y++) {
-            // printf("%d %d\n",x,y);
-            quantized_block[zigzag_index[x][y]] = block[x][y];
+    for (int ii = 0; ii < 8; ii++) {
+        for (int x = 0; x < 8; x++) {
+            for (int y = 0; y < 8; y++) {
+                s[ii][x] += (double)block[ii][y] * cos_cache[(y*2 + 1) * x];
+            }
+            s[ii][x] = c(x) *s[ii][x] / 2.0;
         }
     }
+    for (int ii = 0; ii < 8; ii++) {
+        for (int jj = 0; jj < 8; jj++) {
+            for (int x = 0; x < 8; x++) {
+                tmp[ii][jj] += s[x][jj] * cos_cache[(x*2 + 1) * ii];
+            }
+            tmp[ii][jj] = c(ii) * tmp[ii][jj] / 2.0;
+        }
+    }
+    // printf("\n---------\n");
+    // printf("\n---------\n");
+    // printf("zigzag arrange start!!!\n");
+    // for (int x = 0; x < 8; x++) {
+    //     for (int y = 0; y < 8; y++) {
+    //         // printf("%d %d\n",x,y);
+    //         quantized_block[zigzag_index[x][y]] = (int)block[x][y];
+    //     }
+    // }
 
     // 4. 量化
     //     對於前面得到的 64 個空間頻率振幅值, 我們將對它們作幅度分層量化操作.方
     // 法就是分別除以量化表裡對應值並四捨五入.
     // printf("quantization start!!!\n");
-    for (int i = 0 ; i<64; i++ ) {
-        quantized_block[i] = round((double)quantized_block[i]/zigzag_quantize_table[category[yuv_id]][i]);
+    for (int x = 0; x < 8; x++) {
+        for (int y = 0; y < 8; y++) {
+            quantized_block[zigzag_index[x][y]] = (word)((word)(tmp[x][y]/zigzag_quantize_table[category[yuv_id]][i] + 16384.5) - 16384);
+        }
     }
     // printf("gogogo!\n");
     // DC即一塊圖像樣本的平均值. 就是說, 它包含了原始 8x8 圖像塊裡的很多能量. (通常
     // 會得到一個很大的數值)
-    static int dc_block[5] = {0,0,0,0,0};
+    static word dc_block[5] = {0,0,0,0,0};
     // JPEG 的作者指出連續塊的 DC 率之間有很緊密的聯繫,  因此他們決定對 8x8 塊的
     // DC 值的差別進行編碼. (Y, Cb, Cr 分別有自己的 DC)
     // Diff = DC(i)  - DC(i-1)
     // 所以這一塊的 DC(i) 就是:  DC(i)  = DC(i-1)  + Diff
-    int diff = quantized_block[0] - dc_block[yuv_id];
+    int diff = (int)(quantized_block[0] - dc_block[yuv_id]);
     // printf("dc encode\n");
     int need_write_length;
     int index;
-    dc_block[yuv_id] = dc_block[yuv_id] + diff;
-    need_write_length = find_length(&diff);
-    printf("length = %d, number = %d\n",need_write_length,diff);
-    printf("%s\n----\n",dc_diff[category[yuv_id]][need_write_length]);
-    for (int i = 0; i<strlen((char*)dc_diff[category[yuv_id]][need_write_length]);i++) {
-        write_one_bit(fp, dc_diff[category[yuv_id]][need_write_length][i] - '0',false);
+    dc_block[yuv_id] = quantized_block[0];//dc_block[yuv_id] + diff;
+    if (!diff) {
+        for (int i = 0; i<strlen((char*)dc_diff[category[yuv_id]][0]); i++) {
+            write_one_bit(fp, dc_diff[category[yuv_id]][0][i] - '0',false);
+        }
+    } else {
+        need_write_length = find_length(&diff);
+        // printf("length = %d, number = %d\n",need_write_length,diff);
+        // printf("%s\n----\n",dc_diff[category[yuv_id]][need_write_length]);
+        for (int i = 0; i<strlen((char*)dc_diff[category[yuv_id]][need_write_length]); i++) {
+            write_one_bit(fp, dc_diff[category[yuv_id]][need_write_length][i] - '0',false);
+        }
+        codeword_encode(fp,diff,need_write_length);
     }
-    codeword_encode(fp,diff,need_write_length);
     // 例如上面例子中, Diff 是 -511, 就編碼成 ((0,9), 000000000)
     // 如果 9 的 Huffman 編碼是 1111110
     //(在 JPG 文件中, 一般有兩個 Huffman 表, 一個是 DC 用, 一個是 AC 用)
@@ -283,10 +207,10 @@ void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
             continue;
         }
         if (count_zero>=16) {
-            for (int j = 0;j<count_zero/16;j++) {
+            for (int j = 0; j<count_zero/16; j++) {
                 // printf("???");
-                printf("%s\n----\n",ac_cof[category[yuv_id]][0xf0]);
-                for (int k = 0; k<strlen((char*)ac_cof[category[yuv_id]][0xf0]);k++) {
+                // printf("%s\n----\n",ac_cof[category[yuv_id]][0xf0]);
+                for (int k = 0; k<strlen((char*)ac_cof[category[yuv_id]][0xf0]); k++) {
                     write_one_bit(fp,ac_cof[category[yuv_id]][0xf0][k] - '0',false);
                 }
                 // fwrite(fp,1,16,ac_cof[category[yuv_id]][0xF][0x0]);
@@ -301,10 +225,10 @@ void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
         // c = c | ((length = find_length(block[i/8][i%8]) >> 4) & 0x0f);
         // printf("need_length = %d\n",need_write_length);
         // printf("count_zero is %u, match word = %d\n", (count_zero << 4)&0xf0,need_write_length);
-        printf("%s\n----\n",ac_cof[category[yuv_id]][(count_zero << 4)&0xf0|need_write_length]);
-        for (int j = 0; j<strlen((char*)ac_cof[category[yuv_id]][(count_zero << 4)&0xf0|need_write_length]);j++) {
+        // printf("%s\n----\n",ac_cof[category[yuv_id]][(count_zero << 4)&0xf0|need_write_length]);
+        for (int j = 0; j<strlen((char*)ac_cof[category[yuv_id]][((count_zero << 4)&0xf0)|need_write_length]); j++) {
             // printf("writing...%d\n",ac_cof[category[yuv_id]][count_zero][index][j] - '0');
-            write_one_bit(fp,ac_cof[category[yuv_id]][(count_zero << 4)&0xf0|need_write_length][j] - '0',false);
+            write_one_bit(fp,ac_cof[category[yuv_id]][((count_zero << 4)&0xf0)|need_write_length][j] - '0',false);
         }
         codeword_encode(fp,value,need_write_length);
         count_zero = 0;
@@ -312,14 +236,15 @@ void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
     if (padding_start_index!=63) {
         // EOB 0x00
         // fwrite(&c,1,1,fp);
-        printf("eob%s\n----\n",ac_cof[category[yuv_id]][0x00]);
-        for (int i = 0; i<strlen((char*)ac_cof[category[yuv_id]][0x00]);i++) {
+        // printf("eob%s\n----\n",ac_cof[category[yuv_id]][0x00]);
+        for (int i = 0; i<strlen((char*)ac_cof[category[yuv_id]][0x00]); i++) {
             write_one_bit(fp,ac_cof[category[yuv_id]][0x00][i] - '0',false);
         }
     }
 }
 
-void calculate_mcu(FILE *fp,int block_x, int block_y, yuv_element* yuv_image) {
+void calculate_mcu(FILE *fp,int block_x, int block_y, yuv_element* yuv_image)
+{
 
     // JPEG 裡是對每 8x8 個點為一個單位處理的.
     // 所以如果原始圖片的長寬不是 8 的倍數, 都需要先補成 8 的倍數, 好一塊塊的處理.
@@ -327,68 +252,38 @@ void calculate_mcu(FILE *fp,int block_x, int block_y, yuv_element* yuv_image) {
     // 所以大多數情況, 是要補成 16x16 的整數塊.按從左到右, 從上到下的次序排列
     //  (和我們寫字的次序一樣). JPEG 裡是對 Y Cr Cb 分別做 DCT 變換的. 這裡進行 DCT 變換
     // 的 Y, Cr, Cb 值的範圍都是 -128~127. (Y 被減去 128)
-    int mcu[8][8];
-    for (int yuv_id = 0;yuv_id<3;yuv_id++) {
-        for (int y=0;y<8;y++) {
-            for (int x=0;x<8;x++) {
+    byte mcu[8][8];
+    for (int yuv_id = 0; yuv_id<3; yuv_id++) {
+        for (int y=0; y<8; y++) {
+            for (int x=0; x<8; x++) {
                 // JPEG 裡是對每 8x8 個點為一個單位處理的.
                 // 所以如果原始圖片的長寬不是 8 的倍數, 都需要先補成 8 的倍數, 好一塊塊的處理.
                 if (block_y - y>=0 && block_x + x < image_width) {
                     // printf("for %d %d %d %d choose value = %d\n",x,y,block_x,block_y,yuv_image[(block_y - y) * image_width + (block_x + x)].y);
                     switch(yuv_id) {
-                        case 0:
-                            mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].y;
-                            break;
-                        case 1:
-                            mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].cr;
-                            break;
-                        case 2:
-                            mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].cb;
-                            break;
+                    case 0:
+                        mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].y;
+                        break;
+                    case 1:
+                        mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].cr;
+                        break;
+                    case 2:
+                        mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].cb;
+                        break;
                     }
-                }
-                else {
+                } else {
                     mcu[y][x] = 0;
                 }
-                mcu[y][x]-=128;
+                // mcu[y][x]-=128;
             }
         }
-        calculate_mcu_block(fp,mcu,yuv_id); 
+        calculate_mcu_block(fp,mcu,yuv_id);
     }
-    // for (int y=0;y<8;y++) {
-    //     for (int x=0;x<8;x++) {
-    //         // JPEG 裡是對每 8x8 個點為一個單位處理的.
-    //         // 所以如果原始圖片的長寬不是 8 的倍數, 都需要先補成 8 的倍數, 好一塊塊的處理.
-    //         if (block_y - y>=0 && block_x + x < image_width) {
-    //             // printf("for %d %d %d %d choose value = %d\n",x,y,block_x,block_y,yuv_image[(block_y - y) * image_width + (block_x + x)].cr);
-    //             mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].cr;
-    //         }
-    //         else {
-    //             mcu[y][x] = 0;
-    //         }
-    //         mcu[y][x]-=128;
-    //     }
-    // }
-    // calculate_mcu_block(fp,mcu,1);
 
-    // for (int y=0;y<8;y++) {
-    //     for (int x=0;x<8;x++) {
-    //         // JPEG 裡是對每 8x8 個點為一個單位處理的.
-    //         // 所以如果原始圖片的長寬不是 8 的倍數, 都需要先補成 8 的倍數, 好一塊塊的處理.
-    //         if (block_y - y>=0 && block_x + x < image_width) {
-    //             // printf("for %d %d %d %d choose value = %d\n",x,y,block_x,block_y,yuv_image[(block_y - y) * image_width + (block_x + x)].cb);
-    //             mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].cb;
-    //         }
-    //         else {
-    //             mcu[y][x] = 0;
-    //         }
-    //         mcu[y][x]-=128;
-    //     }
-    // }
-    // calculate_mcu_block(fp,mcu,2);   
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
     if (argc != 2  && argc != 3) {
         printf("[ERROR]:\nusage: ./encoder <input_file> [<output_file_name>]");
         exit(1);
@@ -402,19 +297,17 @@ int main(int argc, char* argv[]) {
     fseek(bitmap_f, 18, SEEK_CUR);
     fread(&image_width, 1, sizeof(int), bitmap_f);
     fread(&image_height, 1, sizeof(int), bitmap_f);
-    if((image_width&7)!=0 || (image_height&7)!=0) {
-        exit(1);
-    }
-	fseek(bitmap_f, 28, SEEK_CUR);
+    // if((image_width&7)!=0 || (image_height&7)!=0) {
+    //     exit(1);
+    // }
+    fseek(bitmap_f, 28, SEEK_CUR);
     yuv_element* yuv_image = (yuv_element*) malloc(image_height*image_width*sizeof(yuv_element));
 
     // word R,G,B;
-    byte discard[3] = {0,0,0};
+    byte discard;
     byte R,G,B;
-    for (int y = 0; y < image_height; y++)
-    {
-        for (int x = 0; x < image_width; x++)
-        {
+    for (int y = 0; y < image_height; y++) {
+        for (int x = 0; x < image_width; x++) {
 
             // Y = 0.299*R + 0.587*G + 0.114*B  (亮度)
             // Cb =  - 0.1687*R - 0.3313*G + 0.5   *B + 128
@@ -426,29 +319,30 @@ int main(int argc, char* argv[]) {
             // 都是按 12bit 一個點來存放的, 我們簡寫為 YUV12.
             // image.get_pixel(x, y, colour);
             fread(&R, 1, 1, bitmap_f);
-			fread(&G, 1, 1, bitmap_f);
-			fread(&B, 1, 1, bitmap_f);
+            fread(&G, 1, 1, bitmap_f);
+            fread(&B, 1, 1, bitmap_f);
             // yuv_image[y*image_width+x].y = 0.299*colour.red + 0.587*colour.green + 0.114*colour.blue;
             // yuv_image[y*image_width+x].cb =  - 0.1687*colour.red - 0.3313*colour.green + 0.5   *colour.blue + 128;
             // yuv_image[y*image_width+x].cr =    0.5   *colour.red - 0.4187*colour.green - 0.0813*colour.blue + 128;
-            // yuv_image[y*image_width+x].y = 0.299*R + 0.587*G + 0.114*B;
-            // yuv_image[y*image_width+x].cb =  - 0.1687*R - 0.3313*G + 0.5   *B + 128;
-            // yuv_image[y*image_width+x].cr =    0.5   *R - 0.4187*G - 0.0813*B + 128;
-
-            yuv_image[y*image_width+x].y = clip(round(0.2126*R + 0.7152*G + 0.0722*B));
-            // printf("fucking value is %u\n",yuv_image[y*image_width+x].y);
-            yuv_image[y*image_width+x].cb = clip(round(-0.09991*R - 0.33609*G + 0.436*B + 128));
-            yuv_image[y*image_width+x].cr = clip(round(0.615*R -0.55861*G -0.05639*B + 128));
+            //ITU-R BT.601-7
+            yuv_image[y*image_width+x].y = (byte)(0.299*R + 0.587*G + 0.114*B - 128);
+            yuv_image[y*image_width+x].cb = (byte)(- 0.172*R - 0.339*G + 0.511 *B);
+            yuv_image[y*image_width+x].cr = (byte)(0.511 *R - 0.418*G - 0.083*B);
+            //https://www.vocal.com/video/rgb-and-yuv-color-space-conversion/
+            // yuv_image[y*image_width+x].y = clip(round(0.2126*R + 0.7152*G + 0.0722*B));
+            // yuv_image[y*image_width+x].cb = clip(round(-0.09991*R - 0.33609*G + 0.436*B + 128));
+            // yuv_image[y*image_width+x].cr = clip(round(0.615*R -0.55861*G -0.05639*B + 128));
         }
-        fread(discard,1,(4-(image_width*3)%4)%4,bitmap_f);
+        for (int i = 0; i<(4-(image_width*3)%4)%4; i++) {
+            fread(&discard,1,1,bitmap_f);
+        }
     }
 
     FILE* fp;
     if (argc==3 && (fp = fopen(argv[2], "w")) == NULL) {
         printf("%s can't be opened\n", argv[2]);
         exit(1);
-    }
-    else if ((fp = fopen("image.jpg", "w")) == NULL) {
+    } else if ((fp = fopen("image.jpg", "w")) == NULL) {
         printf("image.jpeg can't be opened\n");
         exit(1);
     }
@@ -467,137 +361,187 @@ int main(int argc, char* argv[]) {
 
     byte c;
     //Start of image
-    c = 0xff;fwrite(&c, 1, 1, fp);
-    c = SOI;fwrite(&c, 1, 1, fp);
+    c = 0xff;
+    fwrite(&c, 1, 1, fp);
+    c = SOI;
+    fwrite(&c, 1, 1, fp);
     //APP0 commment
-    c = 0xff;fwrite(&c, 1, 1, fp);
-    c = APP0;fwrite(&c, 1, 1, fp);
+    c = 0xff;
+    fwrite(&c, 1, 1, fp);
+    c = APP0;
+    fwrite(&c, 1, 1, fp);
     //APP0 length
     write_word_to_littleendian(fp, 16);
     char comment[5] = "JFIF";
     fwrite(comment, 1, 5, fp);
-    c = 0x01;fwrite(&c, 1, 1, fp);
-    c = 0x01;fwrite(&c, 1, 1, fp);
-    c = 0x00;fwrite(&c, 1, 1, fp);
-    c = 0x00;fwrite(&c, 1, 1, fp);
-    c = 0x01;fwrite(&c, 1, 1, fp);
-    c = 0x00;fwrite(&c, 1, 1, fp);
-    c = 0x01;fwrite(&c, 1, 1, fp);
-    c = 0x00;fwrite(&c, 1, 1, fp);
-    c = 0x00;fwrite(&c, 1, 1, fp);
+    c = 0x01;
+    fwrite(&c, 1, 1, fp);
+    c = 0x01;
+    fwrite(&c, 1, 1, fp);
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
+    c = 0x01;
+    fwrite(&c, 1, 1, fp);
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
+    c = 0x01;
+    fwrite(&c, 1, 1, fp);
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
 
     //DQT1
-    c = 0xff;fwrite(&c, 1, 1, fp);
-    c = DQT;fwrite(&c, 1, 1, fp);
+    c = 0xff;
+    fwrite(&c, 1, 1, fp);
+    c = DQT;
+    fwrite(&c, 1, 1, fp);
     //length
     write_word_to_littleendian(fp, 132);
     //id & precision 0x00
-    c = 0x00;fwrite(&c, 1, 1, fp);
-    for (int i = 0;i<8; i++) {
-        for (int j = 0;j<8; j++) {
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
+    for (int i = 0; i<8; i++) {
+        for (int j = 0; j<8; j++) {
             zigzag_quantize_table[0][zigzag_index[i][j]] = quantize_table[0][i*8+j];
             zigzag_quantize_table[1][zigzag_index[i][j]] = quantize_table[1][i*8+j];
         }
     }
-    for (int i = 0;i<8; i++) {
-        for (int j = 0;j<8; j++) {
+    for (int i = 0; i<8; i++) {
+        for (int j = 0; j<8; j++) {
             // printf("%u ",zigzag_quantize_table[0][i*8+j]);
             fwrite(&(zigzag_quantize_table[0][i*8+j]),1,1,fp);
         }
         // printf("\n");
     }
     //id & precision 0x01
-    c = 0x01;fwrite(&c, 1, 1, fp);
-    for (int i = 0;i<8; i++) {
-        for (int j = 0;j<8; j++) {
+    c = 0x01;
+    fwrite(&c, 1, 1, fp);
+    for (int i = 0; i<8; i++) {
+        for (int j = 0; j<8; j++) {
             fwrite(&(zigzag_quantize_table[1][i*8+j]),1,1,fp);
         }
     }
     //SOF
-    c = 0xff;fwrite(&c, 1, 1, fp);
-    c = SOF0;fwrite(&c, 1, 1, fp);
+    c = 0xff;
+    fwrite(&c, 1, 1, fp);
+    c = SOF0;
+    fwrite(&c, 1, 1, fp);
     //length
     write_word_to_littleendian(fp, 17);
     //   - 數據精度 (1 byte) 每個樣本位數, 通常是 8 (大多數軟件不支持 12 和 16)
-    c = 8;fwrite(&c, 1, 1, fp);
+    c = 8;
+    fwrite(&c, 1, 1, fp);
     write_word_to_littleendian(fp,(word)image_height);
     write_word_to_littleendian(fp,(word)image_width);
     // # of component = 3
-    c = 3;fwrite(&c, 1, 1, fp);
+    c = 3;
+    fwrite(&c, 1, 1, fp);
     // 1 = Y, 2 = Cr, 3 = Cb
-    c = 1;fwrite(&c, 1, 1, fp);
+    c = 1;
+    fwrite(&c, 1, 1, fp);
     //      - 採樣係數 (bit 0-3 vert., 4-7 hor.)
-    c = 0x11;fwrite(&c, 1, 1, fp);
-    c = 0x00;fwrite(&c, 1, 1, fp);
+    c = 0x11;
+    fwrite(&c, 1, 1, fp);
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
     // 1 = Y, 2 = Cr, 3 = Cb
-    c = 2;fwrite(&c, 1, 1, fp);
+    c = 2;
+    fwrite(&c, 1, 1, fp);
     //      - 採樣係數 (bit 0-3 vert., 4-7 hor.)
-    c = 0x11;fwrite(&c, 1, 1, fp);
-    c = 1;fwrite(&c, 1, 1, fp);
+    c = 0x11;
+    fwrite(&c, 1, 1, fp);
+    c = 1;
+    fwrite(&c, 1, 1, fp);
     // 1 = Y, 2 = Cr, 3 = Cb
-    c = 3;fwrite(&c, 1, 1, fp);
+    c = 3;
+    fwrite(&c, 1, 1, fp);
     //      - 採樣係數 (bit 0-3 vert., 4-7 hor.)
-    c = 0x11;fwrite(&c, 1, 1, fp);
-    c = 1;fwrite(&c, 1, 1, fp);
+    c = 0x11;
+    fwrite(&c, 1, 1, fp);
+    c = 1;
+    fwrite(&c, 1, 1, fp);
 
     //DHT
-    c = 0xff;fwrite(&c, 1, 1, fp);
-    c = DHT;fwrite(&c, 1, 1, fp);
+    c = 0xff;
+    fwrite(&c, 1, 1, fp);
+    c = DHT;
+    fwrite(&c, 1, 1, fp);
     //DHT length
     write_word_to_littleendian(fp, 0x01a2);
     // 寫入spec指定的表(ref K.3.3)
     // 0x00表示DC直流0號表；
-    c = 0x00;fwrite(&c, 1, 1, fp);
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
     fwrite(dc_cof_code_length[0], 1, 16, fp);
     fwrite(dc_cof_value[0], 1, 12, fp);
     // 0x01表示DC直流1號表；
-    c = 0x01;fwrite(&c, 1, 1, fp);
+    c = 0x01;
+    fwrite(&c, 1, 1, fp);
     fwrite(dc_cof_code_length[1], 1, 16, fp);
     fwrite(dc_cof_value[1], 1, 12, fp);
     // 0x10表示AC交流0號表；
-    c = 0x10;fwrite(&c, 1, 1, fp);
+    c = 0x10;
+    fwrite(&c, 1, 1, fp);
     fwrite(ac_cof_code_length[0], 1, 16, fp);
     fwrite(ac_cof_value[0], 1, 162, fp);
     // 0x11表示AC交流1號表。
-    c = 0x11;fwrite(&c, 1, 1, fp);
+    c = 0x11;
+    fwrite(&c, 1, 1, fp);
     fwrite(ac_cof_code_length[1], 1, 16, fp);
     fwrite(ac_cof_value[1], 1, 162, fp);
 
 
     //SOS
-    c = 0xff;fwrite(&c, 1, 1, fp);
-    c = SOS;fwrite(&c, 1, 1, fp);
+    c = 0xff;
+    fwrite(&c, 1, 1, fp);
+    c = SOS;
+    fwrite(&c, 1, 1, fp);
     //SOS length
     write_word_to_littleendian(fp, 12);
     //component num should be 3
-    c = 3;fwrite(&c, 1, 1, fp);
+    c = 3;
+    fwrite(&c, 1, 1, fp);
     //component_id 1 = Y, 2 = Cr, 3 = Cb
-    c = 1;fwrite(&c, 1, 1, fp);
+    c = 1;
+    fwrite(&c, 1, 1, fp);
     //0 ac & 0 dc table
-    c = 0x00;fwrite(&c, 1, 1, fp);
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
     //component_id 1 = Y, 2 = Cr, 3 = Cb
-    c = 2;fwrite(&c, 1, 1, fp);
+    c = 2;
+    fwrite(&c, 1, 1, fp);
     //1 ac & 1 dc table
-    c = 0x11;fwrite(&c, 1, 1, fp);
+    c = 0x11;
+    fwrite(&c, 1, 1, fp);
     //component_id 1 = Y, 2 = Cr, 3 = Cb
-    c = 3;fwrite(&c, 1, 1, fp);
+    c = 3;
+    fwrite(&c, 1, 1, fp);
     //1 ac & 1 dc table
-    c = 0x11;fwrite(&c, 1, 1, fp);
+    c = 0x11;
+    fwrite(&c, 1, 1, fp);
     //忽略三個byte (???) 超謎= =
-    c = 0x00;fwrite(&c, 1, 1, fp);
-    c = 0x3f;fwrite(&c, 1, 1, fp);
-    c = 0x00;fwrite(&c, 1, 1, fp);
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
+    c = 0x3f;
+    fwrite(&c, 1, 1, fp);
+    c = 0x00;
+    fwrite(&c, 1, 1, fp);
 
     init_cos_cache();
-    for (int y = image_height - 1; y>=0;y-=8) {
-        for (int x = 0;x<image_width;x+=8) {
+    for (int y = image_height - 1; y>=0; y-=8) {
+        for (int x = 0; x<image_width; x+=8) {
             calculate_mcu(fp,x,y,yuv_image);
         }
     }
     //記得清掃
     write_one_bit(fp,0,true);
-    c = 0xff;fwrite(&c, 1, 1, fp);
-    c = EOI;fwrite(&c, 1, 1, fp);
+    c = 0xff;
+    fwrite(&c, 1, 1, fp);
+    c = EOI;
+    fwrite(&c, 1, 1, fp);
     // 壓縮算法簡介
     // 1. 色彩模型
     // 2. DCT (離散餘弦變換)
