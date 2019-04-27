@@ -274,7 +274,7 @@ void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
     int value;
     byte cof_index;
     int padding_start_index=63;
-    while (padding_start_index>1&&quantized_block[padding_start_index]) {
+    while (padding_start_index>1&&!quantized_block[padding_start_index]) {
         padding_start_index--;
     }
     for (int i = 1; i <= padding_start_index; i++) {
@@ -312,7 +312,7 @@ void calculate_mcu_block(FILE *fp,int block[][8],int yuv_id) {
     if (padding_start_index!=63) {
         // EOB 0x00
         // fwrite(&c,1,1,fp);
-        printf("%s\n----\n",ac_cof[category[yuv_id]][0x00]);
+        printf("eob%s\n----\n",ac_cof[category[yuv_id]][0x00]);
         for (int i = 0; i<strlen((char*)ac_cof[category[yuv_id]][0x00]);i++) {
             write_one_bit(fp,ac_cof[category[yuv_id]][0x00][i] - '0',false);
         }
