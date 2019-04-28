@@ -7,7 +7,7 @@
 #include <math.h>
 #include <string.h>
 #include "util.h"
-#include "./bitmap/bitmap_image.hpp"
+#include "bitmap_image.hpp"
 
 int image_height,image_width;
 byte category[3] = {0,1,1}; // table for luminance or chrominance

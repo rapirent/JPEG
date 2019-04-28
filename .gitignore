@@ -80,3 +80,5 @@ dkms.conf
 *.zip
 JpegParser/
 output
+*.bmp
+*.jpg
