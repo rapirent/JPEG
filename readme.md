@@ -1,4 +1,4 @@
-# JPEG
+# ITCT HW1
 
 A C-based jpeg baseline encoder & decoder, and is alos NTU course `資訊理論與編碼技巧` HW1.
 
@@ -7,7 +7,7 @@ You can check more detail on my [github repo](https://github.com/rapirent/JPEG)
 ## Prerequirements
 
 - use [bitmap library](https://github.com/ArashPartow/bitmap) to access bmp file.
-  - this library is written as c++, so we should compile whole project using `g++`
+  - this library is written in c++, so we should compile whole project using `g++`
 
 ## How to use
 
@@ -21,12 +21,12 @@ $ make
 
 - and you can specific decoder or encoder, even clean (delete)
 ```sh
-$ make encoder
-$ make decoder
-$ make clean
+$ make encoder # g++ -o encoder encoder.c -O3
+$ make decoder # g++ -o decoder decoder.c -O3
+$ make clean # rm decoder encoder
 ```
 
-- or compile with `gnu c++`
+- or compile with `g++`
 ```sh
 $ g++ -o decoder decoder.c -O3
 $ g++ -o encoder encoder.c -O3
@@ -50,9 +50,9 @@ $ ./decoder <input file> [output file]
 
 - NOTICE that `$` stands for command prompt.
 
-## enviroments
+## environments
 
-- already tested on my macOS and NTU CSIE server (Arch Linux), so any FreeBSD or Linux  enviroments should be fine.
+- already tested on my macOS and NTU CSIE server (Arch Linux), so any FreeBSD or Linux  environments should be fine.
 - more detail below:
 ```sh
 $ g++ -v
