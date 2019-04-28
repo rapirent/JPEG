@@ -10,6 +10,9 @@ You can check more detail on my [github repo](https://github.com/rapirent/JPEG)
   - this library is written as c++, so we should compile whole project using `g++`
 
 ## How to use
+
+### Compile
+
 - use `makefile` to compile all
 
 ```sh
@@ -29,6 +32,24 @@ $ g++ -o decoder decoder.c -O3
 $ g++ -o encoder encoder.c -O3
 ```
 
+### command example
+
+- encoder: NOTICE that `input file` should be bmp, `output file` should be jpg
+    - `output file` is optional, if you don't specify it, it would be `image.jpg`
+
+```sh
+$ ./encoder <input file> [output file]
+```
+
+- decoder: NOTICE that `input file` should be jpg, `output file` should be bmp
+    - `output file` is optional, if you don't specify it, it would be `image.bmp`
+
+```sh
+$ ./decoder <input file> [output file]
+```
+
+- NOTICE that `$` stands for command prompt.
+
 ## enviroments
 
 - already tested on my macOS and NTU CSIE server (Arch Linux), so any FreeBSD or Linux  enviroments should be fine.
@@ -41,8 +62,14 @@ Target: x86_64-apple-darwin18.5.0
 ```
 
 ```sh
-$ g++ -v
-
+r07922009@linux9 [~/JPEG] g++ -v
+使用內建 specs。
+COLLECT_GCC=g++
+COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-pc-linux-gnu/8.3.0/lto-wrapper
+目的：x86_64-pc-linux-gnu
+配置為：/build/gcc/src/gcc/configure --prefix=/usr --libdir=/usr/lib --libexecdir=/usr/lib --mandir=/usr/share/man --infodir=/usr/share/info --with-bugurl=https://bugs.archlinux.org/ --enable-languages=c,c++,ada,fortran,go,lto,objc,obj-c++ --enable-shared --enable-threads=posix --enable-libmpx --with-system-zlib --with-isl --enable-__cxa_atexit --disable-libunwind-exceptions --enable-clocale=gnu --disable-libstdcxx-pch --disable-libssp --enable-gnu-unique-object --enable-linker-build-id --enable-lto --enable-plugin --enable-install-libiberty --with-linker-hash-style=gnu --enable-gnu-indirect-function --enable-multilib --disable-werror --enable-checking=release --enable-default-pie --enable-default-ssp --enable-cet=auto
+執行緒模型：posix
+gcc version 8.3.0 (GCC)
 ```
 
 ## Author
