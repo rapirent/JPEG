@@ -7,25 +7,18 @@
 #include <math.h>
 #include <string.h>
 #include "util.h"
-// #include "./bitmap/bitmap_image.hpp"
-
-#define min(a,b) (a<b?a:b)
-#define max(a,b) (a>b?a:b)
-#define abs(a) (a<0?-a:a)
-#define clip(a) max(min(a,255),0)
-
-
+#include "./bitmap/bitmap_image.hpp"
 
 int image_height,image_width;
 byte category[3] = {0,1,1}; // table for luminance or chrominance
 byte zigzag_quantize_table[2][64];
+bitmap_image rgb_image;
 
 double cos_cache[200];
-double PI = acos(-1);
 void init_cos_cache()
 {
     for (int i = 0; i < 200; i++) {
-        cos_cache[i] = cos(i * PI / 16.0);
+        cos_cache[i] = cos(i * M_PI / 16.0);
     }
 }
 
@@ -88,18 +81,17 @@ byte find_length (int* value)
     *value = (*value) > 0 ? (*value) : ((0x1 << need_write_length) + (*value) -1);
     return need_write_length;
 }
-void calculate_mcu_block(FILE *fp,byte block[][8],int yuv_id)
+void calculate_mcu_block(FILE *fp,char block[][8],int yuv_id)
 {
-    //TODO
     double tmp[8][8], s[8][8];
     // printf("Start fdct!!!\n");
-    word quantized_block[64];
+    int quantized_block[64];
     memset(tmp,0,sizeof(tmp));
     memset(s,0,sizeof(s));
     for (int ii = 0; ii < 8; ii++) {
         for (int x = 0; x < 8; x++) {
             for (int y = 0; y < 8; y++) {
-                s[ii][x] += (double)block[ii][y] * cos_cache[(y*2 + 1) * x];
+                s[ii][x] += block[ii][y] * cos_cache[(y*2 + 1) * x];
             }
             s[ii][x] = c(x) *s[ii][x] / 2.0;
         }
@@ -128,13 +120,13 @@ void calculate_mcu_block(FILE *fp,byte block[][8],int yuv_id)
     // printf("quantization start!!!\n");
     for (int x = 0; x < 8; x++) {
         for (int y = 0; y < 8; y++) {
-            quantized_block[zigzag_index[x][y]] = (word)((word)(tmp[x][y]/zigzag_quantize_table[category[yuv_id]][i] + 16384.5) - 16384);
+            quantized_block[zigzag_index[x][y]] = round(tmp[x][y]/zigzag_quantize_table[category[yuv_id]][x*8+y]);
         }
     }
     // printf("gogogo!\n");
     // DC即一塊圖像樣本的平均值. 就是說, 它包含了原始 8x8 圖像塊裡的很多能量. (通常
     // 會得到一個很大的數值)
-    static word dc_block[5] = {0,0,0,0,0};
+    static int dc_block[5] = {0,0,0,0,0};
     // JPEG 的作者指出連續塊的 DC 率之間有很緊密的聯繫,  因此他們決定對 8x8 塊的
     // DC 值的差別進行編碼. (Y, Cb, Cr 分別有自己的 DC)
     // Diff = DC(i)  - DC(i-1)
@@ -243,8 +235,10 @@ void calculate_mcu_block(FILE *fp,byte block[][8],int yuv_id)
     }
 }
 
-void calculate_mcu(FILE *fp,int block_x, int block_y, yuv_element* yuv_image)
+void calculate_mcu(FILE *fp,int block_x, int block_y)
 {
+
+    rgb_t colour;
 
     // JPEG 裡是對每 8x8 個點為一個單位處理的.
     // 所以如果原始圖片的長寬不是 8 的倍數, 都需要先補成 8 的倍數, 好一塊塊的處理.
@@ -252,28 +246,36 @@ void calculate_mcu(FILE *fp,int block_x, int block_y, yuv_element* yuv_image)
     // 所以大多數情況, 是要補成 16x16 的整數塊.按從左到右, 從上到下的次序排列
     //  (和我們寫字的次序一樣). JPEG 裡是對 Y Cr Cb 分別做 DCT 變換的. 這裡進行 DCT 變換
     // 的 Y, Cr, Cb 值的範圍都是 -128~127. (Y 被減去 128)
-    byte mcu[8][8];
+    char mcu[8][8];
+    byte R,G,B;
     for (int yuv_id = 0; yuv_id<3; yuv_id++) {
         for (int y=0; y<8; y++) {
             for (int x=0; x<8; x++) {
                 // JPEG 裡是對每 8x8 個點為一個單位處理的.
                 // 所以如果原始圖片的長寬不是 8 的倍數, 都需要先補成 8 的倍數, 好一塊塊的處理.
-                if (block_y - y>=0 && block_x + x < image_width) {
-                    // printf("for %d %d %d %d choose value = %d\n",x,y,block_x,block_y,yuv_image[(block_y - y) * image_width + (block_x + x)].y);
+                rgb_image.get_pixel(x+block_x, y+block_y, colour);
+
+                // if ((block_y + y)<image_height && block_x + x < image_width) {
                     switch(yuv_id) {
-                    case 0:
-                        mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].y;
-                        break;
-                    case 1:
-                        mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].cr;
-                        break;
-                    case 2:
-                        mcu[y][x] = yuv_image[(block_y - y) * image_width + (block_x + x)].cb;
-                        break;
+                        case 0:
+                            mcu[y][x] = (char)(0.299 * colour.red + 0.587f * colour.green + 0.114 * colour.blue - 128);
+                            // mcu[y][x] = yuv_image[(block_x + x) * image_height + (block_y + y)].y;
+                            // printf("for %d %d %d %d choose value = %d %g\n",x,y,block_x,block_y,mcu[y][x],0.299 * colour.red + 0.587 * colour.green + 0.114 * colour.blue);
+                            break;
+                        case 1:
+                            mcu[y][x] = (char)(-0.1687 * colour.red - 0.3313 * colour.green + 0.5 * colour.blue);
+
+                            // mcu[y][x] = yuv_image[(block_x + x) * image_height + (block_y + y)].cb;
+                            break;
+                        case 2:
+                            mcu[y][x] = (char)(0.5 * colour.red - 0.4187 * colour.green - 0.0813 * colour.blue);
+
+                            // mcu[y][x] = yuv_image[(block_x + x) * image_height + (block_y + y)].cr;
+                            break;
                     }
-                } else {
-                    mcu[y][x] = 0;
-                }
+                // } else {
+                //     mcu[y][x] = 0;
+                // }
                 // mcu[y][x]-=128;
             }
         }
@@ -289,54 +291,56 @@ int main(int argc, char* argv[])
         exit(1);
     }
     // bitmap_image image(argv[1]);
-    FILE *bitmap_f;
-    if ((bitmap_f=fopen(argv[1],"r"))==NULL) {
-        printf("%s can't be opened\n", argv[1]);
-        exit(1);
-    }
-    fseek(bitmap_f, 18, SEEK_CUR);
-    fread(&image_width, 1, sizeof(int), bitmap_f);
-    fread(&image_height, 1, sizeof(int), bitmap_f);
-    // if((image_width&7)!=0 || (image_height&7)!=0) {
+    // FILE *bitmap_f;
+    // if ((bitmap_f=fopen(argv[1],"r"))==NULL) {
+    //     printf("%s can't be opened\n", argv[1]);
     //     exit(1);
     // }
-    fseek(bitmap_f, 28, SEEK_CUR);
-    yuv_element* yuv_image = (yuv_element*) malloc(image_height*image_width*sizeof(yuv_element));
+    // fseek(bitmap_f, 18, SEEK_CUR);
+    // fread(&image_width, 1, sizeof(int), bitmap_f);
+    // fread(&image_height, 1, sizeof(int), bitmap_f);
+    // // if((image_width&7)!=0 || (image_height&7)!=0) {
+    // //     exit(1);
+    // // }
+    // fseek(bitmap_f, 28, SEEK_CUR);
+    // yuv_element* yuv_image = (yuv_element*) malloc(image_width*image_height*sizeof(yuv_element));
 
-    // word R,G,B;
-    byte discard;
-    byte R,G,B;
-    for (int y = 0; y < image_height; y++) {
-        for (int x = 0; x < image_width; x++) {
+    // // word R,G,B;
+    // byte discard;
+    // byte R,G,B;
+    // for (int y = 0; y < image_height; y++) {
+    //     for (int x = 0; x < image_width; x++) {
 
-            // Y = 0.299*R + 0.587*G + 0.114*B  (亮度)
-            // Cb =  - 0.1687*R - 0.3313*G + 0.5   *B + 128
-            // Cr =    0.5   *R - 0.4187*G - 0.0813*B + 128
-            // 因為人眼對圖片上的亮度 Y 的變化遠比色度 C 的變化敏感. 我們完全可以每個點保存一個 8bit 的亮
-            // 度值, 每 2x2 個點保存一個 Cr Cb 值, 而圖像在肉眼中的感覺不會起太大的變化.
-            // 所以, 原來用 RGB 模型, 4 個點需要 4x3=12 字節. 而現在僅需要 4+2=6 字節; 平
-            // 均每個點佔 12bit. 當然 JPEG 格式裡允許每個點的 C 值都記錄下來; 不過 MPEG 裡
-            // 都是按 12bit 一個點來存放的, 我們簡寫為 YUV12.
-            // image.get_pixel(x, y, colour);
-            fread(&R, 1, 1, bitmap_f);
-            fread(&G, 1, 1, bitmap_f);
-            fread(&B, 1, 1, bitmap_f);
-            // yuv_image[y*image_width+x].y = 0.299*colour.red + 0.587*colour.green + 0.114*colour.blue;
-            // yuv_image[y*image_width+x].cb =  - 0.1687*colour.red - 0.3313*colour.green + 0.5   *colour.blue + 128;
-            // yuv_image[y*image_width+x].cr =    0.5   *colour.red - 0.4187*colour.green - 0.0813*colour.blue + 128;
-            //ITU-R BT.601-7
-            yuv_image[y*image_width+x].y = (byte)(0.299*R + 0.587*G + 0.114*B - 128);
-            yuv_image[y*image_width+x].cb = (byte)(- 0.172*R - 0.339*G + 0.511 *B);
-            yuv_image[y*image_width+x].cr = (byte)(0.511 *R - 0.418*G - 0.083*B);
-            //https://www.vocal.com/video/rgb-and-yuv-color-space-conversion/
-            // yuv_image[y*image_width+x].y = clip(round(0.2126*R + 0.7152*G + 0.0722*B));
-            // yuv_image[y*image_width+x].cb = clip(round(-0.09991*R - 0.33609*G + 0.436*B + 128));
-            // yuv_image[y*image_width+x].cr = clip(round(0.615*R -0.55861*G -0.05639*B + 128));
-        }
-        for (int i = 0; i<(4-(image_width*3)%4)%4; i++) {
-            fread(&discard,1,1,bitmap_f);
-        }
-    }
+    //         // Y = 0.299*R + 0.587*G + 0.114*B  (亮度)
+    //         // Cb =  - 0.1687*R - 0.3313*G + 0.5   *B + 128
+    //         // Cr =    0.5   *R - 0.4187*G - 0.0813*B + 128
+    //         // 因為人眼對圖片上的亮度 Y 的變化遠比色度 C 的變化敏感. 我們完全可以每個點保存一個 8bit 的亮
+    //         // 度值, 每 2x2 個點保存一個 Cr Cb 值, 而圖像在肉眼中的感覺不會起太大的變化.
+    //         // 所以, 原來用 RGB 模型, 4 個點需要 4x3=12 字節. 而現在僅需要 4+2=6 字節; 平
+    //         // 均每個點佔 12bit. 當然 JPEG 格式裡允許每個點的 C 值都記錄下來; 不過 MPEG 裡
+    //         // 都是按 12bit 一個點來存放的, 我們簡寫為 YUV12.
+    //         // image.get_pixel(x, y, colour);
+    //         fread(&R, 1, 1, bitmap_f);
+    //         fread(&G, 1, 1, bitmap_f);
+    //         fread(&B, 1, 1, bitmap_f);
+    //         // yuv_image[y*image_width+x].y = 0.299*colour.red + 0.587*colour.green + 0.114*colour.blue;
+    //         // yuv_image[y*image_width+x].cb =  - 0.1687*colour.red - 0.3313*colour.green + 0.5   *colour.blue + 128;
+    //         // yuv_image[y*image_width+x].cr =    0.5   *colour.red - 0.4187*colour.green - 0.0813*colour.blue + 128;
+    //         //ITU-R BT.601-7
+    //         yuv_image[x*image_height+y].y = (byte)(0.299 * R + 0.587 * G + 0.114 * B - 128);
+    //         printf("choose value = %d\n",yuv_image[x*image_height+y].y);
+
+    //         yuv_image[x*image_height+y].cb = (byte)(-0.1687 * R - 0.3313 * G + 0.5 * B);
+    //         yuv_image[x*image_height+y].cr = (byte)(0.5 * R - 0.4187 * G - 0.0813 * B);
+    //         //https://www.vocal.com/video/rgb-and-yuv-color-space-conversion/
+    //         // yuv_image[y*image_width+x].y = clip(round(0.2126*R + 0.7152*G + 0.0722*B));
+    //         // yuv_image[y*image_width+x].cb = clip(round(-0.09991*R - 0.33609*G + 0.436*B + 128));
+    //         // yuv_image[y*image_width+x].cr = clip(round(0.615*R -0.55861*G -0.05639*B + 128));
+    //     }
+    //     for (int i = 0; i<(4-(image_width*3)%4)%4; i++) {
+    //         fread(&discard,1,1,bitmap_f);
+    //     }
+    // }
 
     FILE* fp;
     if (argc==3 && (fp = fopen(argv[2], "w")) == NULL) {
@@ -346,6 +350,20 @@ int main(int argc, char* argv[])
         printf("image.jpeg can't be opened\n");
         exit(1);
     }
+
+    bitmap_image image(argv[1]);
+    if (!image) {
+        printf("%s can't be opened\n", argv[1]);
+        exit(1);
+    }
+
+    image_height = image.height();
+    image_width  = image.width();
+    rgb_image = image;
+
+    // yuv_element* yuv_image = (yuv_element*) malloc(image_height*image_width*sizeof(yuv_element));
+
+    //color model
 
     // image_height = image.height();
     // image_width  = image.width();
@@ -531,9 +549,9 @@ int main(int argc, char* argv[])
     fwrite(&c, 1, 1, fp);
 
     init_cos_cache();
-    for (int y = image_height - 1; y>=0; y-=8) {
+    for (int y = 0; y<image_height; y+=8) {
         for (int x = 0; x<image_width; x+=8) {
-            calculate_mcu(fp,x,y,yuv_image);
+            calculate_mcu(fp,x,y);
         }
     }
     //記得清掃
@@ -550,6 +568,6 @@ int main(int argc, char* argv[])
     // 5. 0 RLE 編碼
     // 6. 範式 Huffman 編碼
     // 7. DC 的編碼
-    free(yuv_image);
+    // free(yuv_image);
     return 0;
 }

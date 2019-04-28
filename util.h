@@ -13,30 +13,6 @@ typedef uint8_t byte;
 
 typedef uint16_t word;
 
-
-//bmp header
-typedef struct {
-        unsigned short	bfType;
-        unsigned int	bfSize;
-        unsigned short	bfReserved1;
-        unsigned short	bfReserved2;
-        unsigned int	bfOffBits;
-} BITMAPFILEHEADER;
-
-typedef struct {
-        unsigned int	biSize;
-        int				biWidth;
-        int				biHeight;
-        unsigned short	biPlanes;
-        unsigned short	biBitCount;
-        unsigned int	biCompression;
-        unsigned int	biSizeImage;
-        int				biXPelsPerMeter;
-        int				biYPelsPerMeter;
-        unsigned int	biClrUsed;
-        unsigned int	biClrImportant;
-} BITMAPINFOHEADER;
-
 const int zigzag_index[8][8] = {
     0, 1, 5, 6,14,15,27,28,
     2, 4, 7,13,16,26,29,42,
@@ -390,7 +366,7 @@ const char* ac_cof[2][256] = {{
         "0",
         "0",
         "0",
-        
+
         "0",
         "1111111111101011",
         "1111111111101100",
