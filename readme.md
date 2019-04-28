@@ -1,13 +1,13 @@
 # JPEG
 
-A C-based jpeg baseline encoder & decoder.
+A C-based jpeg baseline encoder & decoder, and is alos NTU course `資訊理論與編碼技巧` HW1.
 
-NTU ITCT HW1
+You can check more detail on my [github repo](https://github.com/rapirent/JPEG)
 
 ## Prerequirements
 
 - use [bitmap library](https://github.com/ArashPartow/bitmap) to access bmp file.
-- this library is written as c++, so we should compile whole project using `g++`
+  - this library is written as c++, so we should compile whole project using `g++`
 
 ## How to use
 - use `makefile` to compile all
