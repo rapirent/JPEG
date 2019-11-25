@@ -1,8 +1,6 @@
-# ITCT HW1
+# JPEG: c-implementation
 
-A C-based jpeg baseline encoder & decoder, and is alos NTU course `資訊理論與編碼技巧` HW1.
-
-You can check more detail on my [github repo](https://github.com/rapirent/JPEG)
+A C-based jpeg baseline encoder & decoder
 
 ## Prerequirements
 
@@ -81,12 +79,6 @@ gcc version 8.3.0 (GCC)
 ![](./dark.png)
 ![](./blur.png)
 
-## Author
-
-Name: 丁國騰
-Student id: R07922009
-Department: 資訊工程學系碩士班
-
-## LICENSE
+## Author&LICENSE
 
 MIT @kuoteng, 2019

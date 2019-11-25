@@ -5,12 +5,6 @@
 
 typedef uint8_t byte;
 
-// typedef struct {
-//     //big endian
-//     byte higher_byte;
-//     byte lowwer_byte;
-// }word_unit;
-
 typedef uint16_t word;
 
 const int zigzag_index[8][8] = {
@@ -25,8 +19,6 @@ const int zigzag_index[8][8] = {
 };
 
 const byte quantize_table[2][64] = {{
-        //Luminance quantization table
-        //ATTENTION: this is not zigzag arrange yet
         16, 11, 10, 16, 24,  40, 51, 61,
         12, 12, 14, 19, 26,  58, 60, 55,
         14, 13, 16, 24, 40,  57, 69, 56,
@@ -36,7 +28,6 @@ const byte quantize_table[2][64] = {{
         49, 64, 78, 87, 103, 121, 120, 101,
         72, 92, 95, 98, 112, 100, 103, 99
     }, {
-        //Chrominance quantization table
         17, 18, 24, 47, 99, 99, 99, 99,
         18, 21, 26, 66, 99, 99, 99, 99,
         24, 26, 56, 99, 99, 99, 99, 99,
@@ -48,16 +39,12 @@ const byte quantize_table[2][64] = {{
     }
 };
 const byte dc_cof_code_length[2][16] = {
-    // 0, 0, 7, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
     0x00,0x01,0x05,0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-    // 0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0
     0x00,0x03,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,0x00
 };
 
 const byte dc_cof_value[2][12] = {
-    // 4, 5, 3, 2, 6, 1, 0, 7, 8, 9, 10, 11,
     0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,
-    // 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
     0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,
 };
 
@@ -91,10 +78,8 @@ const byte ac_cof_value[2][162] = {
     0xF9,0xFA
 };
 
-//K.3å 這樣就省去建構huffman tree的時間 =>老師很看重效能
-// we should distinguish 100 and 10
+
 const char* dc_diff[2][12] = {{
-    //luminance DC coefficient differences
         "00",
         "010",
         "011",
@@ -108,7 +93,6 @@ const char* dc_diff[2][12] = {{
         "11111110",
         "111111110",
     }, {
-    //chrominance DC coefficient differences
         "00",
         "01",
         "10",
@@ -123,9 +107,6 @@ const char* dc_diff[2][12] = {{
         "11111111110"
     }
 };
-//K.5 這樣就省去建構huffman tree的時間 =>老師很看重效能
-//注意，0/0=EOB F/0=ZRL存於表中
-// const char* ac_cof[2][16][16] = {{
 // 256這樣比較好 index... 只需要 (zero_count << 4)&0xf0 | huffman_codeword_length
 const char* ac_cof[2][256] = {{
         //luminance AC coefficients
@@ -681,8 +662,6 @@ typedef struct {
     byte g;
     byte b;
 }rgb_element;
-// 我們完全可以每個點保存一個 8bit 的亮度值, 每 2x2 個點保存一個 Cr Cb 值, 而圖像在肉眼中的感覺不會起太大的變化.
-// 原來用 RGB 模型, 4 個點需要 4x3=12 字節. 而現在僅需要 4+2=6 字節
 typedef struct {
     byte y[4];
     byte cb;
@@ -713,18 +692,9 @@ uint16_t read_word_to_bigendian(FILE* fp)
     byte high,low;
     fread(&high, 1, 1, fp);
     fread(&low, 1, 1, fp);
-    // printf("get a bigendian word: %.2x%.2x\n", high, low);
-    // 0000 0000 0100 0011
-    //
-    // byte high = c.higher_byte;
-    //exchange the byte: Motorola format
     word word_value = 0x0000;
     word_value = ((word_value | high) << 8) &0xff00;
     word_value = word_value | low;
-    // 0000 0000 0000 0000
-    // byte low = c.lowwer_byte;
-    // word low = (c & 0x00ff << 8);
-    // 0000 0000 0100 0011
     return word_value;
 }
 
