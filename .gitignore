@@ -180,7 +180,7 @@ dkms.conf
 
 # End of https://www.gitignore.io/api/c++
 
-decorder
+decoder
 encoder
 main
 
