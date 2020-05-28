@@ -102,7 +102,7 @@ void calculate_mcu_block(FILE *fp,char block[][8],int yuv_id)
     }
     for (int x = 0; x < 8; x++) {
         for (int y = 0; y < 8; y++) {
-            quantized_block[zigzag_index[x][y]] = (short)round(tmp[x][y]/(double)zigzag_quantize_table[category[yuv_id]][x*8+y]);
+            quantized_block[zigzag_index[x][y]] = (short)round(tmp[x][y]/(double)quantize_table[category[yuv_id]][x*8+y]);
         }
     }
     static short dc_block[5] = {0,0,0,0,0};

@@ -183,3 +183,6 @@ dkms.conf
 decorder
 encoder
 main
+
+*.pdf
+*.zip
