@@ -70,15 +70,6 @@ COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-pc-linux-gnu/8.3.0/lto-wrapper
 gcc version 8.3.0 (GCC)
 ```
 
-## Result
-
-嘗試過許多種寫法後，發現都有一些瑕疵：偏暗以及模糊 (可參考如下)，最後我選擇繳交較為模糊但是顏色沒有偏掉者
-
-可以參考我 github 的不同分支，可以看到不同的結果
-
-![](./dark.png)
-![](./blur.png)
-
 ## Author&LICENSE
 
 MIT @kuoteng, 2019
